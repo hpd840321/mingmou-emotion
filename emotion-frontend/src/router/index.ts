@@ -27,6 +27,11 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    path: '/school-tree',
+    name: 'SchoolTree',
+    component: () => import('@/views/SchoolTree.vue'),
+  },
+  {
     path: '/face-clusters',
     name: 'FaceCluster',
     component: () => import('@/views/FaceClusterPage.vue'),

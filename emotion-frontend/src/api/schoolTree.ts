@@ -1,0 +1,22 @@
+import client from './client'
+
+export interface TreeNode {
+  id: string; label: string; type: 'grade' | 'class' | 'student'
+  gradeId?: number; classId?: number; studentId?: number; studentNo?: string
+  children?: TreeNode[]
+}
+
+export interface RawEmotionRecord {
+  faceRecordId: number; captureTime: string; periodLabel: string
+  bbox: string; confidence: number; dominantEmotion: string
+  dominantConfidence: number
+  emotions: { happy: number; sad: number; angry: number; surprise: number; fear: number; disgust: number; neutral: number }
+}
+
+export function fetchSchoolTree(): Promise<TreeNode[]> {
+  return client.get('/school-tree').then(r => r.data as TreeNode[])
+}
+
+export function fetchStudentRawEmotions(studentId: number): Promise<RawEmotionRecord[]> {
+  return client.get(`/school-tree/student/${studentId}/raw-emotions`).then(r => r.data as RawEmotionRecord[])
+}

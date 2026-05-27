@@ -23,6 +23,7 @@ const auth = useAuthStore()
 interface NavItem { key: string; label: string; icon: string; to: string; roles?: string[] }
 const allItems: (NavItem | { separator: true })[] = [
   { key: 'school', label: '校级大盘', icon: '📊', to: '/school/overview', roles: ['admin', 'school_manager', 'grade_leader'] },
+  { key: 'tree', label: '学校组织', icon: '🌳', to: '/school-tree' },
   { key: 'class', label: '班级看板', icon: '📋', to: '/class/1/dashboard' },
   { key: 'student', label: '个人档案', icon: '👤', to: '/student/1/profile' },
   { separator: true },
@@ -40,6 +41,7 @@ const visibleItems = computed(() => allItems.filter(item => {
 
 function isActive(key: string): boolean {
   if (key === 'school') return route.path.startsWith('/school')
+  if (key === 'tree') return route.path.startsWith('/school-tree')
   if (key === 'class') return route.path.startsWith('/class')
   if (key === 'student') return route.path.startsWith('/student')
   return false
