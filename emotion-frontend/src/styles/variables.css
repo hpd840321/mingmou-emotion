@@ -1,0 +1,63 @@
+:root {
+  --color-primary: #1E40AF;
+  --color-on-primary: #FFFFFF;
+  --color-secondary: #3B82F6;
+  --color-accent: #D97706;
+  --color-bg: #F8FAFC;
+  --color-fg: #1E3A8A;
+  --color-card: #FFFFFF;
+  --color-muted: #E9EEF6;
+  --color-muted-fg: #64748B;
+  --color-border: #DBEAFE;
+  --color-destructive: #DC2626;
+  --color-ring: #1E40AF;
+
+  --emotion-happy: #22C55E;
+  --emotion-surprise: #F59E0B;
+  --emotion-neutral: #64748B;
+  --emotion-sad: #F97316;
+  --emotion-angry: #DC2626;
+  --emotion-fear: #7C3AED;
+  --emotion-disgust: #374151;
+
+  --font-heading: 'Fira Sans', sans-serif;
+  --font-body: 'Fira Sans', sans-serif;
+  --font-mono: 'Fira Code', monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.75rem;
+  --leading-body: 1.6;
+  --leading-heading: 1.3;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-popover: 0 4px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+
+  --topbar-height: 56px;
+  --sidebar-width: 220px;
+  --sidebar-collapsed: 64px;
+  --breadcrumb-height: 32px;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0F172A;
+  --color-fg: #F8FAFC;
+  --color-card: #1E293B;
+  --color-muted: #334155;
+  --color-border: #475569;
+}
