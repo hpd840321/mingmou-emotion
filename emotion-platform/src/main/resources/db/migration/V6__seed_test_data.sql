@@ -4,3 +4,8 @@ INSERT INTO student (id, class_id, student_no, name, status) VALUES (1, 1, '2026
 INSERT INTO student (id, class_id, student_no, name, status) VALUES (2, 1, '2026002', '李四', 'active') ON CONFLICT (id) DO NOTHING;
 INSERT INTO student (id, class_id, student_no, name, status) VALUES (3, 1, '2026003', '王五', 'active') ON CONFLICT (id) DO NOTHING;
 INSERT INTO student (id, class_id, student_no, name, status) VALUES (4, 1, '2026004', '赵六', 'active') ON CONFLICT (id) DO NOTHING;
+
+-- Update sequences after manual ID inserts
+SELECT setval('grade_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM grade));
+SELECT setval('class_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM class));
+SELECT setval('student_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM student));

@@ -3,6 +3,7 @@ com/school/emotion/client/VisionMindClient$FaceSearchMatch.class
 com/school/emotion/model/entity/ClassImage.class
 com/school/emotion/model/dto/FaceClusterVO.class
 com/school/emotion/controller/AlertController.class
+com/school/emotion/config/DataScanRunner.class
 com/school/emotion/model/dto/SchoolOverviewDTO$GradeComparison.class
 com/school/emotion/controller/StudentController.class
 com/school/emotion/model/entity/SchoolClass.class
@@ -41,14 +42,18 @@ com/school/emotion/controller/FaceClusterController.class
 com/school/emotion/repository/FaceRecordRepository.class
 com/school/emotion/service/analysis/EmotionHealthCalculator.class
 com/school/emotion/controller/ImageIngestController.class
+com/school/emotion/service/DataDirectoryScanner$ScanResult.class
+com/school/emotion/service/DataDirectoryScanner.class
 com/school/emotion/model/dto/SchoolOverviewDTO$AlertRanking.class
 com/school/emotion/model/dto/AnnotateRequest.class
 com/school/emotion/config/WebSocketConfig.class
 com/school/emotion/model/dto/ImageIngestResponse.class
 com/school/emotion/listener/AlertEventListener.class
 com/school/emotion/model/dto/ImageIngestResponse$Data.class
+com/school/emotion/service/DataDirectoryScanner$ScanReport.class
 com/school/emotion/service/ai/FaceClusteringService$UnmatchedFace.class
 com/school/emotion/event/AlertTriggeredEvent.class
+com/school/emotion/controller/SchoolTreeController.class
 com/school/emotion/repository/ClassImageRepository.class
 com/school/emotion/client/VisionMindClient$3.class
 com/school/emotion/repository/StudentRepository.class

@@ -3,6 +3,7 @@
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/event/AlertTriggeredEvent.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/exception/AiServiceException.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/controller/ClassController.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/service/DataDirectoryScanner.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/exception/ImageProcessingException.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/model/dto/FaceClusterVO.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/model/entity/InterventionLog.java
@@ -32,7 +33,9 @@
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/controller/AdminController.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/model/entity/ClassImage.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/model/entity/SchoolClass.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/controller/SchoolTreeController.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/config/WebSocketConfig.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/config/DataScanRunner.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/controller/ImageIngestController.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/repository/FaceRecordRepository.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/main/java/com/school/emotion/service/DashboardService.java
