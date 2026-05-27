@@ -20,7 +20,9 @@ public class EmotionAnalysisResult {
         Map<String, Object> emotionData = (Map<String, Object>) vmData.get("emotion");
         if (emotionData != null) {
             result.setDominantEmotion((String) emotionData.get("label"));
-            result.setDominantConfidence(((Number) emotionData.get("probability")).floatValue());
+            if (emotionData.get("probability") != null) {
+                result.setDominantConfidence(((Number) emotionData.get("probability")).floatValue());
+            }
         }
         return result;
     }

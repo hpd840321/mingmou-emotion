@@ -33,4 +33,29 @@ public class FaceDetectionResult {
         public int getHeight() { return height; }
         public void setHeight(int height) { this.height = height; }
     }
+
+    @SuppressWarnings("unchecked")
+    public static FaceDetectionResult fromVmResponse(Map<String, Object> vmData) {
+        FaceDetectionResult result = new FaceDetectionResult();
+        List<Map<String, Object>> facesData = (List<Map<String, Object>>) vmData.get("faces");
+        if (facesData != null) {
+            result.setFaces(facesData.stream().map(f -> {
+                Face face = new Face();
+                List<Integer> bboxList = (List<Integer>) f.get("bbox");
+                if (bboxList != null && bboxList.size() == 4) {
+                    BBox bbox = new BBox();
+                    bbox.setX(bboxList.get(0));
+                    bbox.setY(bboxList.get(1));
+                    bbox.setWidth(bboxList.get(2));
+                    bbox.setHeight(bboxList.get(3));
+                    face.setBbox(bbox);
+                }
+                if (f.get("confidence") != null) {
+                    face.setConfidence(((Number) f.get("confidence")).floatValue());
+                }
+                return face;
+            }).toList());
+        }
+        return result;
+    }
 }
