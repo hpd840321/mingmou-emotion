@@ -1,37 +1,43 @@
 <template>
   <div class="student-profile">
-    <div class="student-header" v-if="store.profileData">
-      <div class="student-info">
-        <h2>{{ store.profileData.studentName }}</h2>
-        <span class="student-meta">学号: {{ store.profileData.studentNo }} · {{ store.profileData.className }}</span>
-      </div>
-      <div class="student-tags">
-        <el-tag v-for="tag in store.profileData.tags" :key="tag" :type="tagType(tag)" size="small">{{ tag }}</el-tag>
-      </div>
-    </div>
+    <div v-if="store.loading" class="loading-state"><el-skeleton :rows="8" animated /></div>
 
-    <KpiCardRow v-if="store.profileData" :kpis="store.profileData.kpis" />
-
-    <div class="chart-grid">
-      <div class="chart-card">
-        <h3>情绪变化趋势</h3>
-        <div ref="trendRef" class="chart-box"></div>
+    <template v-else-if="store.profileData">
+      <div class="student-header">
+        <div class="student-info">
+          <h2>{{ store.profileData.studentName }}</h2>
+          <span class="student-meta">学号: {{ store.profileData.studentNo }} · {{ store.profileData.className }}</span>
+        </div>
+        <div class="student-tags">
+          <el-tag v-for="tag in store.profileData.tags" :key="tag" :type="tagType(tag)" size="small">{{ tag }}</el-tag>
+        </div>
       </div>
-      <div class="chart-card">
-        <h3>表情分布（本周）</h3>
-        <div ref="pieRef" class="chart-box"></div>
-      </div>
-    </div>
 
-    <div class="chart-card" v-if="store.profileData?.alertTimeline.length">
-      <h3>异常事件时间线</h3>
-      <el-timeline>
-        <el-timeline-item v-for="evt in store.profileData.alertTimeline" :key="evt.date + evt.period"
-          :timestamp="evt.date" placement="top">
-          <p>{{ evt.period }}: {{ evt.desc }} (触发值: {{ evt.triggerValue }})</p>
-        </el-timeline-item>
-      </el-timeline>
-    </div>
+      <KpiCardRow :kpis="store.profileData.kpis" />
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>情绪变化趋势</h3>
+          <div ref="trendRef" class="chart-box"></div>
+        </div>
+        <div class="chart-card">
+          <h3>表情分布（本周）</h3>
+          <div ref="pieRef" class="chart-box"></div>
+        </div>
+      </div>
+
+      <div class="chart-card" v-if="store.profileData.alertTimeline?.length">
+        <h3>异常事件时间线</h3>
+        <el-timeline>
+          <el-timeline-item v-for="evt in store.profileData.alertTimeline" :key="evt.date + evt.period"
+            :timestamp="evt.date" placement="top">
+            <p>{{ evt.period }}: {{ evt.desc }} (触发值: {{ evt.triggerValue }})</p>
+          </el-timeline-item>
+        </el-timeline>
+      </div>
+    </template>
+
+    <el-empty v-else description="暂无学生数据" />
   </div>
 </template>
 
@@ -48,39 +54,35 @@ const studentId = Number(route.params.studentId)
 const trendRef = ref<HTMLDivElement>()
 const pieRef = ref<HTMLDivElement>()
 
-onMounted(() => { store.loadProfile(studentId) })
+onMounted(() => store.loadProfile(studentId))
 
 watch(() => store.profileData, async () => {
   await nextTick()
   if (!store.profileData) return
-
   if (trendRef.value) {
     const chart = echarts.init(trendRef.value)
     chart.setOption({
       tooltip: { trigger: 'axis' },
+      grid: { left: 50, right: 30 },
       xAxis: { type: 'category', data: store.profileData.trendData.map((t: any) => t.date) },
       yAxis: { type: 'value', min: 0, max: 100 },
       series: [
-        { name: '快乐', type: 'line', data: store.profileData.trendData.map((t: any) => t.happy * 100), smooth: true },
-        { name: '悲伤', type: 'line', data: store.profileData.trendData.map((t: any) => t.sad * 100), smooth: true },
+        { name: '快乐', type: 'line', data: store.profileData.trendData.map((t: any) => (t.happy || 0) * 100), smooth: true, itemStyle: { color: '#22C55E' } },
+        { name: '悲伤', type: 'line', data: store.profileData.trendData.map((t: any) => (t.sad || 0) * 100), smooth: true, itemStyle: { color: '#F97316' } },
       ],
     })
   }
-
   if (pieRef.value) {
     const chart = echarts.init(pieRef.value)
     const wd = store.profileData.weekDistribution
     chart.setOption({
       tooltip: { trigger: 'item' },
-      series: [{
-        type: 'pie', radius: ['40%', '70%'],
-        data: [
-          { name: '快乐', value: wd.happy, itemStyle: { color: '#22C55E' } },
-          { name: '悲伤', value: wd.sad, itemStyle: { color: '#F97316' } },
-          { name: '中性', value: wd.neutral, itemStyle: { color: '#64748B' } },
-          { name: '愤怒', value: wd.angry, itemStyle: { color: '#DC2626' } },
-        ],
-      }],
+      series: [{ type: 'pie', radius: ['40%', '70%'], data: [
+        { name: '快乐', value: wd.happy || 0, itemStyle: { color: '#22C55E' } },
+        { name: '悲伤', value: wd.sad || 0, itemStyle: { color: '#F97316' } },
+        { name: '中性', value: wd.neutral || 0, itemStyle: { color: '#64748B' } },
+        { name: '愤怒', value: wd.angry || 0, itemStyle: { color: '#DC2626' } },
+      ]}],
     })
   }
 })
@@ -93,6 +95,7 @@ function tagType(tag: string): string {
 </script>
 
 <style scoped>
+.loading-state { padding: var(--space-8); }
 .student-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-6); }
 .student-info h2 { font-size: var(--text-xl); font-weight: 600; }
 .student-meta { font-size: var(--text-sm); color: var(--color-muted-fg); }

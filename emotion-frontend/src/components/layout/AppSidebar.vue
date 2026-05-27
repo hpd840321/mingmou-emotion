@@ -26,8 +26,8 @@ const allItems: (NavItem | { separator: true })[] = [
   { key: 'class', label: '班级看板', icon: '📋', to: '/class/1/dashboard' },
   { key: 'student', label: '个人档案', icon: '👤', to: '/student/1/profile' },
   { separator: true },
-  { key: 'alerts', label: '预警管理', icon: '⚠️', to: '/alerts', roles: ['admin', 'school_manager'] },
-  { key: 'interventions', label: '干预记录', icon: '📝', to: '/interventions', roles: ['teacher', 'counselor'] },
+  { key: 'clusters', label: '人脸标注', icon: '🏷️', to: '/face-clusters', roles: ['admin', 'teacher'] },
+  { key: 'alerts', label: '预警规则', icon: '⚠️', to: '/alerts', roles: ['admin', 'school_manager'] },
   { separator: true },
   { key: 'admin', label: '系统管理', icon: '⚙️', to: '/admin', roles: ['admin'] },
 ]

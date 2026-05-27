@@ -26,6 +26,24 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/StudentProfile.vue'),
     props: true,
   },
+  {
+    path: '/face-clusters',
+    name: 'FaceCluster',
+    component: () => import('@/views/FaceClusterPage.vue'),
+    meta: { roles: ['admin', 'teacher'] },
+  },
+  {
+    path: '/alerts',
+    name: 'AlertRules',
+    component: () => import('@/views/AlertRulePage.vue'),
+    meta: { roles: ['admin', 'school_manager'] },
+  },
+  {
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('@/views/AdminPage.vue'),
+    meta: { roles: ['admin'] },
+  },
   { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('@/views/NotFound.vue') },
 ]
 
