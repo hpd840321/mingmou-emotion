@@ -21,13 +21,18 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
-ai:
-  face-recognition:
-    url: ${FACE_API_URL:http://localhost:8081}
-    timeout: 10000
-  emotion-recognition:
-    url: ${EMOTION_API_URL:http://localhost:8082}
-    timeout: 10000
+visionmind:
+  api:
+    base-url: ${VM_API_URL:http://localhost:8080}
+  face:
+    detect:
+      path: /v1/face/detect
+    attribute:
+      path: /v1/face/attribute
+    search:
+      path: /v1/face/search
+  facedb:
+    register-path: /v1/facedb/register
 
 resilience4j:
   retry:
