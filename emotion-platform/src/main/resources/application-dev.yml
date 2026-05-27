@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/emotion_platform_dev
+  jpa:
+    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
