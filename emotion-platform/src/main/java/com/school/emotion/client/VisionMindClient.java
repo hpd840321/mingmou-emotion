@@ -21,7 +21,7 @@ import java.util.*;
 public class VisionMindClient {
 
     private static final Logger log = LoggerFactory.getLogger(VisionMindClient.class);
-    private final RestTemplate restTemplate;
+    private RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final String detectPath;
@@ -44,6 +44,11 @@ public class VisionMindClient {
         this.attributePath = attributePath;
         this.searchPath = searchPath;
         this.registerPath = registerPath;
+    }
+
+    // Used in tests to inject mock RestTemplate
+    void setRestTemplate(RestTemplate rt) {
+        this.restTemplate = rt;
     }
 
     private HttpHeaders jsonHeaders() {

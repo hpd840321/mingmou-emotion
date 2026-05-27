@@ -103,7 +103,7 @@ public class FaceClusteringService {
     }
 
     private List<String> parseTokenList(String json) {
-        return List.of(json.replaceAll("[\\[\\]\"]", "").split(","));
+        return new ArrayList<>(List.of(json.replaceAll("[\\[\\]\"]", "").split(",")));
     }
 
     private String toJsonArray(List<String> tokens) {
