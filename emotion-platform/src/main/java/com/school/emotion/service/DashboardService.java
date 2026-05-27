@@ -20,7 +20,6 @@ public class DashboardService {
         this.alertLogRepository = alertLogRepository;
     }
 
-    @Cacheable(value = "schoolOverview", key = "#gradeId != null ? #gradeId : 'all'", unless = "#result == null")
     public SchoolOverviewDTO getSchoolOverview(Long gradeId, String period) {
         SchoolOverviewDTO dto = new SchoolOverviewDTO();
         var aggs = aggregationRepository.findAll();

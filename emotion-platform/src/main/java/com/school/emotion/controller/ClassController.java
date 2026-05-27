@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -30,11 +31,14 @@ public class ClassController {
             @PathVariable Long id,
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String periodLabel) {
-        LocalDate queryDate = date != null ? LocalDate.parse(date) : LocalDate.now();
+        LocalDate queryDate = (date != null && !date.isEmpty()) ? LocalDate.parse(date) : LocalDate.now();
         var aggs = aggregationRepository.findByClassIdAndDate(id, queryDate);
-        return ResponseEntity.ok(Map.of("code", 0, "message", "success", "data", Map.of(
-                "classId", id, "date", queryDate.toString(), "periodLabel", periodLabel,
-                "aggregations", aggs)));
+        Map<String, Object> data = new HashMap<>();
+        data.put("classId", id);
+        data.put("date", queryDate.toString());
+        data.put("periodLabel", periodLabel);
+        data.put("aggregations", aggs);
+        return ResponseEntity.ok(Map.of("code", 0, "message", "success", "data", data));
     }
 
     @GetMapping("/{id}/emotion-trend")

@@ -8,6 +8,5 @@ import java.util.List;
 
 public interface ClassImageRepository extends JpaRepository<ClassImage, Long> {
     List<ClassImage> findByStatus(ImageStatus status);
-    List<ClassImage> findByClassIdAndCaptureTimeBetween(Long classId, OffsetDateTime start, OffsetDateTime end);
     long countByStatus(ImageStatus status);
 }
