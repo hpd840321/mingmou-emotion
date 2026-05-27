@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # ===== Infrastructure =====
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: emotion_platform
+      POSTGRES_USER: emotion
+      POSTGRES_PASSWORD: emotion
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  # ===== Backend Service =====
+  backend:
+    build: ./emotion-platform
+    ports: ["8080:8080"]
+    environment:
+      DB_HOST: postgres
+      DB_USERNAME: emotion
+      DB_PASSWORD: emotion
+      REDIS_HOST: redis
+      VM_API_URL: http://visionmind:8081
+    depends_on: [postgres, redis, visionmind]
+
+  # ===== VisionMind Engine =====
+  visionmind:
+    image: openjdk:17-slim
+    ports: ["8081:8080"]
+    working_dir: /app
+    volumes:
+      - ./visionmind-api/target/visionmind-api-1.0.0-SNAPSHOT.jar:/app/app.jar
+    command: java -jar app.jar --spring.profiles.active=dev
+    environment:
+      DB_HOST: postgres
+      DB_USER: visionmind
+      DB_PASSWORD: visionmind
+      REDIS_HOST: redis
+    depends_on: [postgres, redis]
+
+volumes:
+  pgdata:
