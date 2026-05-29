@@ -10,7 +10,6 @@ import com.school.emotion.repository.ClassImageRepository;
 import com.school.emotion.repository.EmotionRecordRepository;
 import com.school.emotion.repository.FaceRecordRepository;
 import com.school.emotion.repository.GradeRepository;
-import com.school.emotion.repository.StudentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +30,6 @@ public class FaceProcessingPipeline {
     private final FaceRecordRepository faceRecordRepository;
     private final EmotionRecordRepository emotionRecordRepository;
     private final GradeRepository gradeRepository;
-    private final StudentRepository studentRepository;
     private final VisionMindClient visionMindClient;
     private final FaceCroppingService croppingService;
     private final FaceRegistrationService registrationService;
@@ -44,7 +42,6 @@ public class FaceProcessingPipeline {
             FaceRecordRepository faceRecordRepository,
             EmotionRecordRepository emotionRecordRepository,
             GradeRepository gradeRepository,
-            StudentRepository studentRepository,
             VisionMindClient visionMindClient,
             FaceCroppingService croppingService,
             FaceRegistrationService registrationService,
@@ -54,12 +51,18 @@ public class FaceProcessingPipeline {
         this.faceRecordRepository = faceRecordRepository;
         this.emotionRecordRepository = emotionRecordRepository;
         this.gradeRepository = gradeRepository;
-        this.studentRepository = studentRepository;
         this.visionMindClient = visionMindClient;
         this.croppingService = croppingService;
         this.registrationService = registrationService;
         this.confidenceThreshold = confidenceThreshold;
         this.batchSize = batchSize;
+    }
+
+    /**
+     * Single image processing entry point (for Redis stream consumer).
+     */
+    public ProcessResult processSingleImage(ClassImage ci) {
+        return processImage(ci);
     }
 
     public PipelineReport processAll() {
@@ -130,20 +133,11 @@ public class FaceProcessingPipeline {
             return new ProcessResult(false, false);
         }
 
-        // Create Student record (each detected face creates a student candidate)
-        String studentNo = "AUTO_" + ci.getClazz().getId() + "_" + System.currentTimeMillis();
-        Student student = new Student();
-        student.setClazz(ci.getClazz());
-        student.setStudentNo(studentNo);
-        student.setName("未知_" + ci.getId());
-        student.setStatus("active");
-        student = studentRepository.save(student);
-
-        // Create face_record linked to student
+        // Create face_record (student association happens via FaceLibraryService annotation)
         FaceDetectionResult.BBox bbox = bestFace.getBbox();
         FaceRecord fr = new FaceRecord();
         fr.setClassImage(ci);
-        fr.setStudent(student);
+        fr.setStudent(null);
         fr.setBbox(bbox != null ? String.format("{\"x\":%.1f,\"y\":%.1f,\"width\":%.1f,\"height\":%.1f}",
                 bbox.getX(), bbox.getY(), bbox.getWidth(), bbox.getHeight()) : null);
         fr.setConfidence(bestFace.getConfidence());

@@ -21,15 +21,15 @@ public class ImageIngestConsumer implements InitializingBean, DisposableBean {
 
     private final StreamMessageListenerContainer<String, MapRecord<String, String, String>> container;
     private final ClassImageRepository classImageRepository;
-    private final ImageProcessingOrchestrator orchestrator;
+    private final FaceProcessingPipeline pipeline;
 
     public ImageIngestConsumer(
             StreamMessageListenerContainer<String, MapRecord<String, String, String>> container,
             ClassImageRepository classImageRepository,
-            ImageProcessingOrchestrator orchestrator) {
+            FaceProcessingPipeline pipeline) {
         this.container = container;
         this.classImageRepository = classImageRepository;
-        this.orchestrator = orchestrator;
+        this.pipeline = pipeline;
     }
 
     @Override
@@ -46,7 +46,7 @@ public class ImageIngestConsumer implements InitializingBean, DisposableBean {
                                 .filter(ci -> ci.getStatus() == ImageStatus.PENDING)
                                 .ifPresent(ci -> {
                                     try {
-                                        orchestrator.processImage(ci);
+                                        pipeline.processSingleImage(ci);
                                     } catch (Exception e) {
                                         log.error("Failed to process image {} from stream: {}", imageId, e.getMessage());
                                     }
