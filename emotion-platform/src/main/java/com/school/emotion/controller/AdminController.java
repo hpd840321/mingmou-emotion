@@ -1,8 +1,12 @@
 package com.school.emotion.controller;
 
 import com.school.emotion.service.DataDirectoryScanner;
+import com.school.emotion.service.FaceProcessingPipeline;
 import com.school.emotion.service.ImageImportService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
@@ -12,12 +16,17 @@ import java.util.Map;
 @RequestMapping("/api/v1/admin")
 public class AdminController {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminController.class);
     private final ImageImportService importService;
     private final DataDirectoryScanner scanner;
+    private final FaceProcessingPipeline pipeline;
 
-    public AdminController(ImageImportService importService, DataDirectoryScanner scanner) {
+    public AdminController(ImageImportService importService,
+                           DataDirectoryScanner scanner,
+                           FaceProcessingPipeline pipeline) {
         this.importService = importService;
         this.scanner = scanner;
+        this.pipeline = pipeline;
     }
 
     @PostMapping("/import")
@@ -29,12 +38,22 @@ public class AdminController {
                 "data", report));
     }
 
+    @Async("pipelineExecutor")
     @PostMapping("/scan")
-    public ResponseEntity<?> scanAll() {
+    public void scanAll() {
         var report = scanner.scanAll();
-        return ResponseEntity.ok(Map.of(
-                "code", report.error() != null ? 1 : 0,
-                "message", report.error() != null ? report.error() : "scan completed",
-                "data", Map.of("total", report.total(), "imported", report.imported())));
+        log.info("Scan complete: {} total images, {} imported", report.total(), report.imported());
+    }
+
+    @Async("pipelineExecutor")
+    @PostMapping("/pipeline/run")
+    public void runPipeline() {
+        try {
+            var report = pipeline.processAll();
+            log.info("Pipeline finished: total={}, detected={}, noFace={}, errors={}, time={}s",
+                    report.total(), report.detected(), report.noFace(), report.errors(), report.elapsedSeconds());
+        } catch (Exception e) {
+            log.error("Pipeline failed", e);
+        }
     }
 }
