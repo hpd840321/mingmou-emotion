@@ -112,7 +112,8 @@ public class VisionMindClient {
     public List<FaceSearchMatch> searchFaces(byte[] imageData, Integer topK, Double threshold) {
         String base64 = Base64.getEncoder().encodeToString(imageData);
         Map<String, Object> body = new HashMap<>();
-        body.put("image", base64);
+        body.put("image_base64", base64);  // unified field name
+        body.put("image", base64);          // backward compatibility
         body.put("top_k", topK != null ? topK : 5);
         body.put("threshold", threshold != null ? threshold : 0.5);
 
@@ -138,7 +139,8 @@ public class VisionMindClient {
         body.put("id", id);
         body.put("name", name);
         body.put("extra", extraJson);
-        body.put("image", base64);
+        body.put("image_base64", base64);  // unified field name
+        body.put("image", base64);          // backward compatibility
 
         restTemplate.exchange(
                 baseUrl + registerPath, HttpMethod.POST,
