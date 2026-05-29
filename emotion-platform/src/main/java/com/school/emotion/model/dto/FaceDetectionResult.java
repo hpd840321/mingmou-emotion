@@ -13,6 +13,7 @@ public class FaceDetectionResult {
         private BBox bbox;
         private String faceId;
         private Float confidence;
+        private Float quality;
 
         public BBox getBbox() { return bbox; }
         public void setBbox(BBox bbox) { this.bbox = bbox; }
@@ -20,18 +21,20 @@ public class FaceDetectionResult {
         public void setFaceId(String faceId) { this.faceId = faceId; }
         public Float getConfidence() { return confidence; }
         public void setConfidence(Float confidence) { this.confidence = confidence; }
+        public Float getQuality() { return quality; }
+        public void setQuality(Float quality) { this.quality = quality; }
     }
 
     public static class BBox {
-        private int x, y, width, height;
-        public int getX() { return x; }
-        public void setX(int x) { this.x = x; }
-        public int getY() { return y; }
-        public void setY(int y) { this.y = y; }
-        public int getWidth() { return width; }
-        public void setWidth(int width) { this.width = width; }
-        public int getHeight() { return height; }
-        public void setHeight(int height) { this.height = height; }
+        private float x, y, width, height;
+        public float getX() { return x; }
+        public void setX(float x) { this.x = x; }
+        public float getY() { return y; }
+        public void setY(float y) { this.y = y; }
+        public float getWidth() { return width; }
+        public void setWidth(float width) { this.width = width; }
+        public float getHeight() { return height; }
+        public void setHeight(float height) { this.height = height; }
     }
 
     @SuppressWarnings("unchecked")
@@ -41,17 +44,21 @@ public class FaceDetectionResult {
         if (facesData != null) {
             result.setFaces(facesData.stream().map(f -> {
                 Face face = new Face();
-                List<Integer> bboxList = (List<Integer>) f.get("bbox");
+                @SuppressWarnings("unchecked")
+                List<Number> bboxList = (List<Number>) f.get("bbox");
                 if (bboxList != null && bboxList.size() == 4) {
                     BBox bbox = new BBox();
-                    bbox.setX(bboxList.get(0));
-                    bbox.setY(bboxList.get(1));
-                    bbox.setWidth(bboxList.get(2));
-                    bbox.setHeight(bboxList.get(3));
+                    bbox.setX(bboxList.get(0).floatValue());
+                    bbox.setY(bboxList.get(1).floatValue());
+                    bbox.setWidth(bboxList.get(2).floatValue());
+                    bbox.setHeight(bboxList.get(3).floatValue());
                     face.setBbox(bbox);
                 }
                 if (f.get("confidence") != null) {
                     face.setConfidence(((Number) f.get("confidence")).floatValue());
+                }
+                if (f.get("quality") != null) {
+                    face.setQuality(((Number) f.get("quality")).floatValue());
                 }
                 return face;
             }).toList());
