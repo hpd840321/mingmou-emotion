@@ -20,7 +20,7 @@ public class FaceClusterController {
 
     @GetMapping
     public ResponseEntity<?> listClusters(
-            @RequestParam Long classId,
+            @RequestParam("class_id") Long classId,
             @RequestParam(defaultValue = "pending") String status) {
         return ResponseEntity.ok(Map.of("code", 0, "data", faceLibraryService.listPendingClusters(classId, status)));
     }

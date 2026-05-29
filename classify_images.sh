@@ -1,7 +1,7 @@
 #!/bin/bash
 # 按课时段分类监控图像
 # 使用说明: ./classify_images.sh [日期目录]
-# 例如: ./classify_images.sh 2026-0526
+# 例如: ./classify_images.sh data/2026-0526
 
 set -e
 
@@ -66,8 +66,16 @@ for img in "$DATE_DIR"/*.jpg; do
     total=$((total + 1))
 
     filename=$(basename "$img")
-    # 提取时间戳中的 HHMM (第9-12位，0-indexed: 8-11)
-    timestamp="${filename:8:4}"
+    # 提取时间戳中的 HHMM
+    # 支持两种文件名格式:
+    #   新格式: 172_16_15_11_{20260527_070104}.jpg → 提取 {YYYYMMDD_HHMMSS} 中的 HHMM
+    #   旧格式: 20260521063057_T85_0005A7C8.jpg  → 第9-12位 (0-indexed: 8-11)
+    basename_noext="${filename%.*}"
+    if [[ "$basename_noext" =~ \{[0-9]{8}_([0-9]{4})[0-9]{2}\} ]]; then
+        timestamp="${BASH_REMATCH[1]}"
+    else
+        timestamp="${basename_noext:8:4}"
+    fi
 
     assigned=false
     for key in "${!PERIOD_RANGES[@]}"; do

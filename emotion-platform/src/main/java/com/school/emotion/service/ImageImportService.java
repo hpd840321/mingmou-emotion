@@ -24,7 +24,7 @@ public class ImageImportService {
 
     private static final Logger log = LoggerFactory.getLogger(ImageImportService.class);
     private static final Pattern FILENAME_PATTERN =
-            Pattern.compile("IMG_(\\d{4})(\\d{2})(\\d{2})_(\\d{2})(\\d{2})\\d{2}_.+\\.jpg$");
+            Pattern.compile("(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})\\d{2}_.+\\.jpg$");
 
     private static final Map<String, String> DIR_TO_PERIOD = new HashMap<>();
     static {

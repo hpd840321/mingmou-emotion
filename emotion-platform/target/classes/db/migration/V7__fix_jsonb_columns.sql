@@ -1,0 +1,2 @@
+ALTER TABLE face_record ALTER COLUMN bbox TYPE TEXT;
+ALTER TABLE face_record ALTER COLUMN face_encoding TYPE TEXT;

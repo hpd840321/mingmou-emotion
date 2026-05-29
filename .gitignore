@@ -1,8 +1,5 @@
 # 监控图像数据（大文件，不纳入版本控制）
-2026-0521/
-2026-0522/
-2026-0525/
-2026-0526/
+data/
 
 # 系统文件
 .DS_Store
@@ -13,3 +10,5 @@ Thumbs.db
 *.iml
 .vscode/
 .worktrees/
+node_modules/
+emotion-frontend/node_modules/

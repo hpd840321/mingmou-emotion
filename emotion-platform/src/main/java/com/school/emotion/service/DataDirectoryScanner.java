@@ -27,7 +27,7 @@ public class DataDirectoryScanner {
     private static final Logger log = LoggerFactory.getLogger(DataDirectoryScanner.class);
 
     private static final Pattern FILENAME_PATTERN =
-            Pattern.compile("IMG_(\\d{4})(\\d{2})(\\d{2})_(\\d{2})(\\d{2})\\d{2}_.+\\.jpg$");
+            Pattern.compile("(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})\\d{2}_.+\\.jpg$");
 
     private static final Pattern DATE_DIR_PATTERN =
             Pattern.compile("(\\d{4})-(\\d{2})(\\d{2})");
@@ -166,6 +166,13 @@ public class DataDirectoryScanner {
 
     private void importImage(Path imgPath, SchoolClass schoolClass, LocalDate date, String periodKey) {
         String filename = imgPath.getFileName().toString();
+        String imageUrl = imgPath.toAbsolutePath().toString();
+
+        // Skip if already imported
+        if (classImageRepository.existsByImageUrl(imageUrl)) {
+            return;
+        }
+
         var matcher = FILENAME_PATTERN.matcher(filename);
 
         OffsetDateTime captureTime;

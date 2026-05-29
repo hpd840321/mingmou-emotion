@@ -75,9 +75,9 @@ watch(() => store.heatmapData, async () => {
   const chart = echarts.init(distChartRef.value)
   chart.setOption({
     tooltip: { trigger: 'item' },
-    xAxis: { type: 'category', data: store.heatmapData.distribution.map(d => d.label) },
+    xAxis: { type: 'category', data: (store.heatmapData.distribution || []).map((d: any) => d.label) },
     yAxis: { type: 'value' },
-    series: [{ type: 'bar', data: store.heatmapData.distribution.map(d => d.count), itemStyle: { color: '#3B82F6' } }],
+    series: [{ type: 'bar', data: (store.heatmapData.distribution || []).map((d: any) => d.count), itemStyle: { color: '#3B82F6' } }],
   })
 })
 </script>

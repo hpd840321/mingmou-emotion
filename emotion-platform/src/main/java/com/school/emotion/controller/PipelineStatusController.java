@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 
 @RestController
 @RequestMapping("/api/v1/admin/pipeline")
@@ -34,6 +35,48 @@ public class PipelineStatusController {
         this.pipeline = pipeline;
         this.progressService = progressService;
         this.importService = importService;
+    }
+
+    @GetMapping("/data-dirs")
+    public ResponseEntity<Map<String, Object>> getDataDirs(
+            @Value("${app.data.dir:./data}") String dataDir) {
+        // Scan data/ directory structure (school → class → date → period)
+        Path dataRoot = Path.of(dataDir);
+        java.util.List<Map<String, Object>> schools = new java.util.ArrayList<>();
+        try (var schoolStream = java.nio.file.Files.list(dataRoot)) {
+            schoolStream.filter(java.nio.file.Files::isDirectory).forEach(schoolDir -> {
+                Map<String, Object> school = new java.util.LinkedHashMap<>();
+                school.put("name", schoolDir.getFileName().toString());
+                java.util.List<Map<String, Object>> classes = new java.util.ArrayList<>();
+                try (var classStream = java.nio.file.Files.list(schoolDir)) {
+                    classStream.filter(java.nio.file.Files::isDirectory).forEach(classDir -> {
+                        Map<String, Object> cls = new java.util.LinkedHashMap<>();
+                        cls.put("name", classDir.getFileName().toString());
+                        java.util.List<Map<String, Object>> dates = new java.util.ArrayList<>();
+                        try (var dateStream = java.nio.file.Files.list(classDir)) {
+                            dateStream.filter(java.nio.file.Files::isDirectory).forEach(dateDir -> {
+                                Map<String, Object> dateObj = new java.util.LinkedHashMap<>();
+                                dateObj.put("name", dateDir.getFileName().toString());
+                                java.util.List<String> periods = new java.util.ArrayList<>();
+                                try (var periodStream = java.nio.file.Files.list(dateDir)) {
+                                    periodStream.filter(java.nio.file.Files::isDirectory)
+                                            .forEach(p -> periods.add(p.getFileName().toString()));
+                                } catch (Exception ignored) {}
+                                dateObj.put("periods", periods);
+                                dates.add(dateObj);
+                            });
+                        } catch (Exception ignored) {}
+                        cls.put("dates", dates);
+                        classes.add(cls);
+                    });
+                } catch (Exception ignored) {}
+                school.put("classes", classes);
+                schools.add(school);
+            });
+        } catch (Exception e) {
+            log.warn("Failed to scan data dir: {}", e.getMessage());
+        }
+        return ResponseEntity.ok(Map.of("code", 0, "data", Map.of("schools", schools)));
     }
 
     @GetMapping("/status")

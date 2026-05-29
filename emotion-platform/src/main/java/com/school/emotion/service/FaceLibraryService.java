@@ -10,6 +10,8 @@ import com.school.emotion.repository.FaceClusterRepository;
 import com.school.emotion.repository.FaceRecordRepository;
 import com.school.emotion.repository.SchoolClassRepository;
 import com.school.emotion.repository.StudentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ import java.util.List;
 @Service
 public class FaceLibraryService {
 
+    private static final Logger log = LoggerFactory.getLogger(FaceLibraryService.class);
     private final VisionMindClient visionMind;
     private final FaceClusterRepository clusterRepository;
     private final StudentRepository studentRepository;
@@ -70,10 +73,7 @@ public class FaceLibraryService {
         student.setStatus("active");
         student = studentRepository.save(student);
 
-        String extraJson = "{\"student_id\":" + student.getId()
-                + ",\"class_id\":" + request.getClassId() + "}";
-        visionMind.registerFace(request.getStudentNo(), request.getStudentName(),
-                extraJson, new byte[0]);
+        log.info("Cluster {} annotated as student {} (name={})", clusterId, student.getId(), request.getStudentName());
 
         cluster.setStatus("annotated");
         cluster.setAnnotatedAt(OffsetDateTime.now());

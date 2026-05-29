@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 const routes: RouteRecordRaw[] = [
+  { path: '/login', name: 'Login', component: () => import('@/views/LoginPage.vue') },
   { path: '/', redirect: '/school/overview' },
   {
     path: '/school/overview',
@@ -61,13 +62,33 @@ const routes: RouteRecordRaw[] = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore()
+
+  if (to.path === '/login') {
+    next()
+    return
+  }
+
+  if (!auth.token) {
+    next('/login')
+    return
+  }
+
+  if (!auth.user) {
+    const restored = await auth.restoreSession()
+    if (!restored) {
+      next('/login')
+      return
+    }
+  }
+
   const requiredRoles = to.meta?.roles as string[] | undefined
-  if (requiredRoles && auth.user && !auth.hasRole(requiredRoles as any)) {
+  if (requiredRoles && !auth.hasRole(requiredRoles as any)) {
     next('/school/overview')
     return
   }
+
   next()
 })
 

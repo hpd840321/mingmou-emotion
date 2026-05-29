@@ -45,15 +45,5 @@ public class AdminController {
         log.info("Scan complete: {} total images, {} imported", report.total(), report.imported());
     }
 
-    @Async("pipelineExecutor")
-    @PostMapping("/pipeline/run")
-    public void runPipeline() {
-        try {
-            var report = pipeline.processAll();
-            log.info("Pipeline finished: total={}, detected={}, noFace={}, errors={}, time={}s",
-                    report.total(), report.detected(), report.noFace(), report.errors(), report.elapsedSeconds());
-        } catch (Exception e) {
-            log.error("Pipeline failed", e);
-        }
-    }
+    // Pipeline /run is now handled by PipelineStatusController (/api/v1/admin/pipeline/run)
 }

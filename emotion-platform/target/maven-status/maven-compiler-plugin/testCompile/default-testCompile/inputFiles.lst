@@ -1,5 +1,9 @@
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/service/EmotionAggregationServiceTest.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/client/VisionMindClientTest.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/service/FaceProcessingPipelineTest.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/service/AlertEngineTest.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/service/ImageProcessingOrchestratorTest.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/model/dto/EmotionAnalysisResultTest.java
+/home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/model/dto/FaceDetectionResultTest.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/controller/ImageIngestControllerTest.java
 /home/zebra/Downloads/官渡一中初一班-0526/emotion-platform/src/test/java/com/school/emotion/service/FaceClusteringServiceTest.java
