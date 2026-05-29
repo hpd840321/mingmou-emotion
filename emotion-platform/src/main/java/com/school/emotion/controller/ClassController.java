@@ -57,7 +57,7 @@ public class ClassController {
             @PathVariable Long id,
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String periodLabel) {
-        var images = classImageRepository.findAll();
+        var images = classImageRepository.findByClazz_Id(id);
         return ResponseEntity.ok(Map.of("code", 0, "message", "success",
                 "data", Map.of("classId", id, "totalImages", images.size())));
     }

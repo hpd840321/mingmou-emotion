@@ -9,4 +9,6 @@ import java.util.List;
 public interface ClassImageRepository extends JpaRepository<ClassImage, Long> {
     List<ClassImage> findByStatus(ImageStatus status);
     long countByStatus(ImageStatus status);
+    boolean existsByImageUrl(String imageUrl);
+    List<ClassImage> findByClazz_Id(Long classId);
 }
