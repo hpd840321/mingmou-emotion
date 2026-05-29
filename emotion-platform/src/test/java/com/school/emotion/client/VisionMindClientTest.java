@@ -59,6 +59,27 @@ class VisionMindClientTest {
     }
 
     @Test
+    void detectFaces_shouldParseFloatBbox() throws Exception {
+        String base64 = Base64.getEncoder().encodeToString("test-image".getBytes());
+        Map<String, Object> mockResponse = Map.of(
+                "code", 0, "message", "success",
+                "data", Map.of("faces", new Object[]{
+                        Map.of("bbox", List.of(10.5, 20.3, 100.7, 150.2), "confidence", 0.95)
+                }));
+
+        mockServer.expect(requestTo("http://localhost:8080/v1/face/detect"))
+                .andExpect(method(org.springframework.http.HttpMethod.POST))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(mockResponse), MediaType.APPLICATION_JSON));
+
+        FaceDetectionResult result = client.detectFaces("test-image".getBytes());
+        assertNotNull(result.getFaces().get(0).getBbox());
+        assertEquals(10.5f, result.getFaces().get(0).getBbox().getX(), 0.01);
+        assertEquals(20.3f, result.getFaces().get(0).getBbox().getY(), 0.01);
+        assertEquals(100.7f, result.getFaces().get(0).getBbox().getWidth(), 0.01);
+        assertEquals(150.2f, result.getFaces().get(0).getBbox().getHeight(), 0.01);
+    }
+
+    @Test
     void detectFaces_shouldThrowOnError() throws Exception {
         Map<String, Object> errorResponse = Map.of("code", 400, "message", "image_base64 required");
 
