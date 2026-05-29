@@ -33,6 +33,7 @@ public class FaceProcessingPipeline {
     private final VisionMindClient visionMindClient;
     private final FaceCroppingService croppingService;
     private final FaceRegistrationService registrationService;
+    private final PipelineProgressService progressService;
 
     private final float confidenceThreshold;
     private final int batchSize;
@@ -45,6 +46,7 @@ public class FaceProcessingPipeline {
             VisionMindClient visionMindClient,
             FaceCroppingService croppingService,
             FaceRegistrationService registrationService,
+            PipelineProgressService progressService,
             @Value("${app.face.confidence-threshold:0.3}") float confidenceThreshold,
             @Value("${app.pipeline.batch-size:50}") int batchSize) {
         this.classImageRepository = classImageRepository;
@@ -54,6 +56,7 @@ public class FaceProcessingPipeline {
         this.visionMindClient = visionMindClient;
         this.croppingService = croppingService;
         this.registrationService = registrationService;
+        this.progressService = progressService;
         this.confidenceThreshold = confidenceThreshold;
         this.batchSize = batchSize;
     }
@@ -98,6 +101,13 @@ public class FaceProcessingPipeline {
 
     @Transactional
     public ProcessResult processImage(ClassImage ci) {
+        // Mark as PROCESSING and broadcast progress
+        ImageStatus oldStatus = ci.getStatus();
+        ci.setStatus(ImageStatus.PROCESSING);
+        classImageRepository.save(ci);
+        String fileName = Path.of(ci.getImageUrl()).getFileName().toString();
+        progressService.onStatusChange(ci.getId(), oldStatus, ImageStatus.PROCESSING, fileName, null);
+
         Path imagePath = Path.of(ci.getImageUrl());
         byte[] imageBytes;
         try {
@@ -203,14 +213,20 @@ public class FaceProcessingPipeline {
     }
 
     private void markCompleted(ClassImage ci) {
+        ImageStatus oldStatus = ci.getStatus();
         ci.setStatus(ImageStatus.COMPLETED);
         classImageRepository.save(ci);
+        String fileName = Path.of(ci.getImageUrl()).getFileName().toString();
+        progressService.onStatusChange(ci.getId(), oldStatus, ImageStatus.COMPLETED, fileName, null);
     }
 
     private void markFailed(ClassImage ci, String error) {
+        ImageStatus oldStatus = ci.getStatus();
         ci.setStatus(ImageStatus.FAILED);
         ci.setErrorMessage(error);
         classImageRepository.save(ci);
+        String fileName = Path.of(ci.getImageUrl()).getFileName().toString();
+        progressService.onStatusChange(ci.getId(), oldStatus, ImageStatus.FAILED, fileName, error);
     }
 
     public record ProcessResult(boolean faceDetected, boolean registered) {}

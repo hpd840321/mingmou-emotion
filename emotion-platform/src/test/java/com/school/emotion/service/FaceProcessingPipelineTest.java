@@ -37,6 +37,7 @@ class FaceProcessingPipelineTest {
     @Mock private VisionMindClient visionMindClient;
     @Mock private FaceCroppingService croppingService;
     @Mock private FaceRegistrationService registrationService;
+    @Mock private PipelineProgressService progressService;
 
     private FaceProcessingPipeline pipeline;
 
@@ -45,7 +46,7 @@ class FaceProcessingPipelineTest {
         pipeline = new FaceProcessingPipeline(
                 classImageRepository, faceRecordRepository, emotionRecordRepository,
                 gradeRepository, visionMindClient,
-                croppingService, registrationService, 0.3f, 50);
+                croppingService, registrationService, progressService, 0.3f, 50);
     }
 
     @Test
