@@ -183,6 +183,18 @@ public class FaceProcessingPipeline {
                 er.setFaceRecord(fr);
                 er.setDominantEmotion(emotionResult.getDominantEmotion());
                 er.setDominantConfidence(emotionResult.getDominantConfidence());
+
+                java.util.Map<String, Float> probs = emotionResult.getEmotions();
+                if (probs != null) {
+                    er.setEmotionHappy(probs.get("happy"));
+                    er.setEmotionSad(probs.get("sad"));
+                    er.setEmotionAngry(probs.get("angry"));
+                    er.setEmotionSurprise(probs.get("surprise"));
+                    er.setEmotionFear(probs.get("fear"));
+                    er.setEmotionDisgust(probs.get("disgust"));
+                    er.setEmotionNeutral(probs.get("neutral"));
+                }
+
                 emotionRecordRepository.save(er);
                 fr.setStatus(FaceStatus.IDENTIFIED);
                 faceRecordRepository.save(fr);
