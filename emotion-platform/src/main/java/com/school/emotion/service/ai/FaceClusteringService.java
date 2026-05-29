@@ -28,7 +28,8 @@ public class FaceClusteringService {
         pendingQueue.offer(new UnmatchedFace(faceToken, classId, captureTime));
     }
 
-    @Scheduled(fixedRate = 30000)
+    // V1 disabled: replaced by FaceClusteringServiceV2 (Qdrant-based vector similarity)
+    // @Scheduled(fixedRate = 30000)
     public void processPendingClusters() {
         if (pendingQueue.isEmpty()) return;
 
