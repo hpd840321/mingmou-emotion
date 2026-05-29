@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/useAuthStore'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/school/overview' },
@@ -59,4 +60,15 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })
+
+router.beforeEach((to, _from, next) => {
+  const auth = useAuthStore()
+  const requiredRoles = to.meta?.roles as string[] | undefined
+  if (requiredRoles && auth.user && !auth.hasRole(requiredRoles as any)) {
+    next('/school/overview')
+    return
+  }
+  next()
+})
+
 export default router

@@ -36,7 +36,7 @@ const allItems: (NavItem | { separator: true })[] = [
 
 const visibleItems = computed(() => allItems.filter(item => {
   if ('separator' in item) return true
-  if (!item.roles) return true
+    if (!item.roles) return true
   return auth.hasRole(item.roles as any)
 }))
 
