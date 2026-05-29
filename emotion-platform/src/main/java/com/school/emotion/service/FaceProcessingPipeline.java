@@ -78,6 +78,11 @@ public class FaceProcessingPipeline {
 
         int detected = 0, noFace = 0, errors = 0;
         for (int i = 0; i < pending.size(); i++) {
+            // Check if stop was requested
+            if (progressService.isStopRequested()) {
+                log.warn("Pipeline stop requested, terminating after {} images", i);
+                break;
+            }
             ClassImage ci = pending.get(i);
             try {
                 ProcessResult result = processImage(ci);
@@ -227,6 +232,19 @@ public class FaceProcessingPipeline {
         classImageRepository.save(ci);
         String fileName = Path.of(ci.getImageUrl()).getFileName().toString();
         progressService.onStatusChange(ci.getId(), oldStatus, ImageStatus.FAILED, fileName, error);
+    }
+
+    public int resetFailedToPending() {
+        List<ClassImage> failed = classImageRepository.findByStatus(ImageStatus.FAILED);
+        int count = 0;
+        for (ClassImage ci : failed) {
+            ci.setStatus(ImageStatus.PENDING);
+            ci.setErrorMessage(null);
+            classImageRepository.save(ci);
+            count++;
+        }
+        log.info("Reset {} failed images to PENDING", count);
+        return count;
     }
 
     public record ProcessResult(boolean faceDetected, boolean registered) {}

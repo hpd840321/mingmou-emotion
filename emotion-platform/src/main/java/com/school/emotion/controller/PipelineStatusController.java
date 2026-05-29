@@ -38,19 +38,18 @@ public class PipelineStatusController {
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
-        // Query DB for real counts
         long pending = classImageRepository.countByStatus(ImageStatus.PENDING);
         long processing = classImageRepository.countByStatus(ImageStatus.PROCESSING);
         long completed = classImageRepository.countByStatus(ImageStatus.COMPLETED);
         long failed = classImageRepository.countByStatus(ImageStatus.FAILED);
 
-        Map<String, Object> data = Map.of(
-                "pending", pending,
-                "processing", processing,
-                "completed", completed,
-                "failed", failed,
-                "total", pending + processing + completed + failed
-        );
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("pending", pending);
+        data.put("processing", processing);
+        data.put("completed", completed);
+        data.put("failed", failed);
+        data.put("total", pending + processing + completed + failed);
+        data.putAll(progressService.getStatus());
         return ResponseEntity.ok(Map.of("code", 0, "message", "success", "data", data));
     }
 
@@ -58,9 +57,26 @@ public class PipelineStatusController {
     @PostMapping("/run")
     public void runPipeline() {
         progressService.resetCounters();
-        var report = pipeline.processAll();
-        log.info("Pipeline finished: total={}, detected={}, noFace={}, errors={}, time={}s",
-                report.total(), report.detected(), report.noFace(), report.errors(), report.elapsedSeconds());
+        progressService.markRunning();
+        try {
+            var report = pipeline.processAll();
+            log.info("Pipeline finished: total={}, detected={}, noFace={}, errors={}, time={}s",
+                    report.total(), report.detected(), report.noFace(), report.errors(), report.elapsedSeconds());
+        } finally {
+            progressService.markStopped();
+        }
+    }
+
+    @PostMapping("/stop")
+    public ResponseEntity<Map<String, Object>> stopPipeline() {
+        progressService.requestStop();
+        return ResponseEntity.ok(Map.of("code", 0, "message", "停止信号已发送"));
+    }
+
+    @PostMapping("/reset-failed")
+    public ResponseEntity<Map<String, Object>> resetFailed() {
+        int count = pipeline.resetFailedToPending();
+        return ResponseEntity.ok(Map.of("code", 0, "message", "已重置 " + count + " 张图片为待处理", "data", Map.of("resetCount", count)));
     }
 
     @PostMapping("/import")

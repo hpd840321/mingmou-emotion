@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/AdminPage.vue'),
     meta: { roles: ['admin'] },
   },
+  {
+    path: '/admin/pipeline',
+    name: 'PipelineMonitor',
+    component: () => import('@/views/PipelineMonitor.vue'),
+    meta: { roles: ['admin'] },
+  },
   { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('@/views/NotFound.vue') },
 ]
 

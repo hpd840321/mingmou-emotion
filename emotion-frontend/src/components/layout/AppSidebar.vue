@@ -29,6 +29,7 @@ const allItems: (NavItem | { separator: true })[] = [
   { separator: true },
   { key: 'clusters', label: '人脸标注', icon: '🏷️', to: '/face-clusters', roles: ['admin', 'teacher'] },
   { key: 'alerts', label: '预警规则', icon: '⚠️', to: '/alerts', roles: ['admin', 'school_manager'] },
+  { key: 'pipeline', label: '管道监控', icon: '📈', to: '/admin/pipeline', roles: ['admin'] },
   { separator: true },
   { key: 'admin', label: '系统管理', icon: '⚙️', to: '/admin', roles: ['admin'] },
 ]
@@ -44,6 +45,7 @@ function isActive(key: string): boolean {
   if (key === 'tree') return route.path.startsWith('/school-tree')
   if (key === 'class') return route.path.startsWith('/class')
   if (key === 'student') return route.path.startsWith('/student')
+  if (key === 'pipeline') return route.path.startsWith('/admin/pipeline')
   return false
 }
 </script>
