@@ -191,7 +191,6 @@ public class FaceProcessingPipeline {
 
                 emotionRecordRepository.save(er);
                 fr.setStatus(FaceStatus.IDENTIFIED);
-                faceRecordRepository.save(fr);
             }
         } catch (Exception e) {
             log.warn("Emotion analysis failed for image {}: {}", ci.getId(), e.getMessage());

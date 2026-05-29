@@ -71,10 +71,12 @@ public class ImageProcessingPersistenceService {
         FaceRecord faceRecord = new FaceRecord();
         faceRecord.setClassImage(classImage);
         faceRecord.setStudent(null);
-        try {
-            faceRecord.setBbox(objectMapper.writeValueAsString(face.getBbox()));
-        } catch (Exception e) {
-            faceRecord.setBbox(null);
+        if (face.getBbox() != null) {
+            try {
+                faceRecord.setBbox(objectMapper.writeValueAsString(face.getBbox()));
+            } catch (Exception e) {
+                faceRecord.setBbox(null);
+            }
         }
         faceRecord.setConfidence(face.getConfidence());
         faceRecord.setQuality(face.getQuality());
