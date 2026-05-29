@@ -191,8 +191,6 @@ public class FaceProcessingPipeline {
             log.warn("Emotion analysis failed for image {}: {}", ci.getId(), e.getMessage());
         }
 
-        fr.setIsRegisteredToLib("registered".equals(fr.getLibRegisterStatus()));
-        fr.setCroppedImageUrl(fr.getCroppedImageUrl());
         faceRecordRepository.save(fr);
 
         markCompleted(ci);
