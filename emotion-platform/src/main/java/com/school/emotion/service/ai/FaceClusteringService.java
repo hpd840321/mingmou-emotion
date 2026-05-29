@@ -1,10 +1,11 @@
 package com.school.emotion.service.ai;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.school.emotion.model.entity.FaceCluster;
 import com.school.emotion.repository.FaceClusterRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -19,9 +20,11 @@ public class FaceClusteringService {
 
     private final Queue<UnmatchedFace> pendingQueue = new ConcurrentLinkedQueue<>();
     private final FaceClusterRepository clusterRepository;
+    private final ObjectMapper objectMapper;
 
     public FaceClusteringService(FaceClusterRepository clusterRepository) {
         this.clusterRepository = clusterRepository;
+        this.objectMapper = new ObjectMapper();
     }
 
     public void offer(String faceToken, Long classId, OffsetDateTime captureTime) {
@@ -104,11 +107,21 @@ public class FaceClusteringService {
     }
 
     private List<String> parseTokenList(String json) {
-        return new ArrayList<>(List.of(json.replaceAll("[\\[\\]\"]", "").split(",")));
+        try {
+            return new ArrayList<>(Arrays.asList(objectMapper.readValue(json, String[].class)));
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse face tokens JSON: {}", json, e);
+            return new ArrayList<>();
+        }
     }
 
     private String toJsonArray(List<String> tokens) {
-        return "[\"" + String.join("\",\"", tokens) + "\"]";
+        try {
+            return objectMapper.writeValueAsString(tokens);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize face tokens", e);
+            return "[]";
+        }
     }
 
     public record UnmatchedFace(String token, Long classId, OffsetDateTime captureTime) {}
