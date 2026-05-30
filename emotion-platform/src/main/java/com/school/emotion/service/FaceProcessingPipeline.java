@@ -18,8 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class FaceProcessingPipeline {
@@ -184,7 +184,7 @@ public class FaceProcessingPipeline {
             log.warn("Face cropping/registration failed for record {}: {}", fr.getId(), e.getMessage());
         }
 
-        // Emotion analysis via REST API (VisionMind)
+        // Emotion analysis via REST /v1/face/attribute (covers all faces in full image)
         try {
             EmotionAnalysisResult emotionResult = visionMindClient.analyzeAttribute(imageBytes);
             if (emotionResult != null && emotionResult.getDominantEmotion() != null) {
@@ -193,7 +193,7 @@ public class FaceProcessingPipeline {
                 er.setDominantEmotion(emotionResult.getDominantEmotion());
                 er.setDominantConfidence(emotionResult.getDominantConfidence());
 
-                java.util.Map<String, Float> probs = emotionResult.getEmotions();
+                Map<String, Float> probs = emotionResult.getEmotions();
                 if (probs != null) {
                     er.setEmotionHappy(probs.get("happy"));
                     er.setEmotionSad(probs.get("sad"));
@@ -206,6 +206,7 @@ public class FaceProcessingPipeline {
 
                 emotionRecordRepository.save(er);
                 fr.setStatus(FaceStatus.IDENTIFIED);
+                log.info("Emotion record {} created for face {}: {}", er.getId(), fr.getId(), er.getDominantEmotion());
             }
         } catch (Exception e) {
             log.warn("Emotion analysis failed for image {}: {}", ci.getId(), e.getMessage());
