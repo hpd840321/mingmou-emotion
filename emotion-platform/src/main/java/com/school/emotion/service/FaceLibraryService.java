@@ -56,6 +56,14 @@ public class FaceLibraryService {
             vo.setSampleCount(c.getSampleCount());
             vo.setFirstSeenAt(c.getFirstSeenAt());
             vo.setLastSeenAt(c.getLastSeenAt());
+            vo.setAutoAnnotated(c.getStudentId() != null);
+            vo.setStudentId(c.getStudentId());
+            if (c.getStudentId() != null) {
+                studentRepository.findById(c.getStudentId()).ifPresent(s -> {
+                    vo.setStudentName(s.getName());
+                    vo.setStudentNo(s.getStudentNo());
+                });
+            }
             result.add(vo);
         }
         return result;
@@ -87,5 +95,21 @@ public class FaceLibraryService {
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found: " + clusterId));
         cluster.setStatus("merged");
         clusterRepository.save(cluster);
+    }
+
+    @Transactional
+    public void renameCluster(Long clusterId, String newName) {
+        FaceCluster cluster = clusterRepository.findById(clusterId)
+                .orElseThrow(() -> new IllegalArgumentException("Cluster not found: " + clusterId));
+        if (cluster.getStudentId() == null) {
+            throw new IllegalStateException("Cluster has no associated student: " + clusterId);
+        }
+        Student student = studentRepository.findById(cluster.getStudentId())
+                .orElseThrow(() -> new IllegalArgumentException("Student not found: " + cluster.getStudentId()));
+        student.setName(newName);
+        studentRepository.save(student);
+        cluster.setStatus("renamed");
+        clusterRepository.save(cluster);
+        log.info("Cluster {} renamed to {}", clusterId, newName);
     }
 }
