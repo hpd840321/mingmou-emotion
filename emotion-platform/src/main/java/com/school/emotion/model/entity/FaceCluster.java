@@ -27,6 +27,9 @@ public class FaceCluster {
     @Column(name = "last_seen_at")
     private OffsetDateTime lastSeenAt;
 
+    @Column(name = "student_id")
+    private Long studentId;
+
     @Column(columnDefinition = "REAL[]")
     private Float[] centroid;
 
@@ -58,6 +61,8 @@ public class FaceCluster {
     public void setLastSeenAt(OffsetDateTime lastSeenAt) { this.lastSeenAt = lastSeenAt; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public Long getStudentId() { return studentId; }
+    public void setStudentId(Long studentId) { this.studentId = studentId; }
     public Long getAnnotatedBy() { return annotatedBy; }
     public void setAnnotatedBy(Long annotatedBy) { this.annotatedBy = annotatedBy; }
     public OffsetDateTime getAnnotatedAt() { return annotatedAt; }
