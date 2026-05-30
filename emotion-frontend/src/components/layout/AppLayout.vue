@@ -1,5 +1,8 @@
 <template>
-  <div class="app-layout">
+  <div v-if="isLoginPage" class="login-wrapper">
+    <slot />
+  </div>
+  <div v-else class="app-layout">
     <AppTopbar />
     <div class="app-body">
       <AppSidebar />
@@ -12,10 +15,19 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppTopbar from './AppTopbar.vue'
 import AppSidebar from './AppSidebar.vue'
 import AppBreadcrumb from './AppBreadcrumb.vue'
+
+const route = useRoute()
+const isLoginPage = computed(() => route.path === '/login')
 </script>
+
+<style scoped>
+.login-wrapper { height: 100vh; }
+</style>
 
 <style scoped>
 .app-layout { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }

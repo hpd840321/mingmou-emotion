@@ -20,11 +20,11 @@ export interface UserInfo {
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
-  const res: any = await client.post('/auth/login', { username, password })
-  return res as LoginResponse
+  const res = await client.post<any>('/auth/login', { username, password })
+  return res.data as LoginResponse
 }
 
 export async function fetchMe(): Promise<UserInfo> {
-  const res: any = await client.get('/auth/me')
-  return res as UserInfo
+  const res = await client.get<any>('/auth/me')
+  return res.data as UserInfo
 }
