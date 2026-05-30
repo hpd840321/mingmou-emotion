@@ -1,16 +1,22 @@
 package com.school.emotion.service;
 
 import com.school.emotion.model.entity.FaceCluster;
+import com.school.emotion.model.entity.Student;
 import com.school.emotion.repository.FaceClusterRepository;
+import com.school.emotion.repository.FaceRecordRepository;
+import com.school.emotion.repository.SchoolClassRepository;
+import com.school.emotion.repository.StudentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,6 +26,9 @@ public class FaceClusteringServiceV2 {
 
     private final RestTemplate restTemplate;
     private final FaceClusterRepository clusterRepository;
+    private final StudentRepository studentRepository;
+    private final FaceRecordRepository faceRecordRepository;
+    private final SchoolClassRepository schoolClassRepository;
     private final String qdrantUrl;
     private final float similarityThreshold;
     private final int minClusterSize;
@@ -27,11 +36,17 @@ public class FaceClusteringServiceV2 {
     public FaceClusteringServiceV2(
             RestTemplate restTemplate,
             FaceClusterRepository clusterRepository,
+            StudentRepository studentRepository,
+            FaceRecordRepository faceRecordRepository,
+            SchoolClassRepository schoolClassRepository,
             @Value("${app.clustering.qdrant-url:http://localhost:6333}") String qdrantUrl,
             @Value("${app.clustering.similarity-threshold:0.7}") float similarityThreshold,
             @Value("${app.clustering.min-cluster-size:3}") int minClusterSize) {
         this.restTemplate = restTemplate;
         this.clusterRepository = clusterRepository;
+        this.studentRepository = studentRepository;
+        this.faceRecordRepository = faceRecordRepository;
+        this.schoolClassRepository = schoolClassRepository;
         this.qdrantUrl = qdrantUrl;
         this.similarityThreshold = similarityThreshold;
         this.minClusterSize = minClusterSize;
@@ -121,7 +136,73 @@ public class FaceClusteringServiceV2 {
 
         long elapsed = (System.currentTimeMillis() - start) / 1000;
         log.info("Clustering done: {} faces, {} clusters, {}s", allPoints.size(), saved, elapsed);
+
+        // Auto-annotate: create Student records and backfill face_record.student_id
+        autoAnnotateClusters();
+
         return new ClusteringReport(allPoints.size(), saved, outliers, comparisons);
+    }
+
+    @Transactional
+    public void autoAnnotateClusters() {
+        List<FaceCluster> clusters = clusterRepository.findByStatus("pending");
+        if (clusters.isEmpty()) {
+            log.info("No pending clusters to auto-annotate");
+            return;
+        }
+        log.info("Auto-annotating {} clusters", clusters.size());
+
+        Pattern faceTokenPattern = Pattern.compile("\"([^\"]+)\"");
+
+        for (FaceCluster cluster : clusters) {
+            try {
+                Long classId = cluster.getClassId();
+                if (classId == null || classId == 0L) {
+                    log.warn("Cluster {} has no classId, skipping", cluster.getId());
+                    continue;
+                }
+
+                long existingCount = studentRepository.countByStudentNoStartingWith("auto_" + classId + "_");
+                int seq = (int) existingCount + 1;
+                String studentNo = String.format("auto_%d_%d", classId, cluster.getId());
+                String studentName = String.format("student%03d", seq);
+
+                Student student = new Student();
+                student.setStudentNo(studentNo);
+                student.setName(studentName);
+                student.setClazz(schoolClassRepository.getReferenceById(classId));
+                student.setStatus("active");
+                student = studentRepository.save(student);
+                log.info("Created student {} ({}) for cluster {}", studentNo, studentName, cluster.getId());
+
+                String faceTokens = cluster.getFaceTokens();
+                if (faceTokens != null && !faceTokens.isEmpty()) {
+                    java.util.regex.Matcher matcher = faceTokenPattern.matcher(faceTokens);
+                    int backfilled = 0;
+                    while (matcher.find()) {
+                        String libFaceId = matcher.group(1);
+                        var faceRecordOpt = faceRecordRepository.findByLibFaceId(libFaceId);
+                        if (faceRecordOpt.isPresent()) {
+                            var fr = faceRecordOpt.get();
+                            if (fr.getStudent() == null) {
+                                fr.setStudent(student);
+                                faceRecordRepository.save(fr);
+                                backfilled++;
+                            }
+                        }
+                    }
+                    log.info("Backfilled {} face_records for cluster {}", backfilled, cluster.getId());
+                }
+
+                cluster.setStudentId(student.getId());
+                cluster.setStatus("auto_annotated");
+                clusterRepository.save(cluster);
+
+            } catch (Exception e) {
+                log.error("Failed to auto-annotate cluster {}: {}", cluster.getId(), e.getMessage());
+            }
+        }
+        log.info("Auto-annotation complete");
     }
 
     @SuppressWarnings("unchecked")
