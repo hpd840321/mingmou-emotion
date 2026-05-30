@@ -8,6 +8,7 @@ import com.school.emotion.repository.SchoolClassRepository;
 import com.school.emotion.repository.StudentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,9 @@ public class FaceClusteringServiceV2 {
     private final String qdrantUrl;
     private final float similarityThreshold;
     private final int minClusterSize;
+
+    @Autowired(required = false)
+    private ExternalEmotionPushService externalPushService;
 
     public FaceClusteringServiceV2(
             RestTemplate restTemplate,
@@ -197,6 +201,14 @@ public class FaceClusteringServiceV2 {
                 cluster.setStudentId(student.getId());
                 cluster.setStatus("auto_annotated");
                 clusterRepository.save(cluster);
+
+                if (externalPushService != null) {
+                    try {
+                        externalPushService.pushStudent(student);
+                    } catch (Exception pushEx) {
+                        log.warn("Failed to push student after auto-annotate: {}", pushEx.getMessage());
+                    }
+                }
 
             } catch (Exception e) {
                 log.error("Failed to auto-annotate cluster {}: {}", cluster.getId(), e.getMessage());

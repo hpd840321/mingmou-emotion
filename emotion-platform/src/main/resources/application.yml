@@ -27,6 +27,12 @@ spring:
 app:
   data:
     dir: ../data
+  external-push:
+    enabled: false
+    base-url: http://ylcs.htface.cn:33895
+    page-id: Emotion
+    camera-code: CAM_DEFAULT
+    batch-size: 200
 
 visionmind:
   api:
