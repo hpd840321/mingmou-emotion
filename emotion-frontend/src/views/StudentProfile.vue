@@ -13,7 +13,7 @@
         </div>
       </div>
 
-      <KpiCardRow :kpis="store.profileData.kpis" />
+      <KpiCardRow :kpis="store.profileData.kpis || []" />
 
       <div class="chart-grid">
         <div class="chart-card">
@@ -59,22 +59,23 @@ onMounted(() => store.loadProfile(studentId))
 watch(() => store.profileData, async () => {
   await nextTick()
   if (!store.profileData) return
-  if (trendRef.value) {
-    const chart = echarts.init(trendRef.value)
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: 50, right: 30 },
-      xAxis: { type: 'category', data: store.profileData.trendData.map((t: any) => t.date) },
-      yAxis: { type: 'value', min: 0, max: 100 },
-      series: [
-        { name: '快乐', type: 'line', data: store.profileData.trendData.map((t: any) => (t.happy || 0) * 100), smooth: true, itemStyle: { color: '#22C55E' } },
-        { name: '悲伤', type: 'line', data: store.profileData.trendData.map((t: any) => (t.sad || 0) * 100), smooth: true, itemStyle: { color: '#F97316' } },
-      ],
-    })
-  }
+    if (trendRef.value) {
+      const chart = echarts.init(trendRef.value)
+      const trendData = store.profileData.trendData || []
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: 50, right: 30 },
+        xAxis: { type: 'category', data: trendData.map((t: any) => t.date) },
+        yAxis: { type: 'value', min: 0, max: 100 },
+        series: [
+          { name: '快乐', type: 'line', data: trendData.map((t: any) => (t.happy || 0) * 100), smooth: true, itemStyle: { color: '#22C55E' } },
+          { name: '悲伤', type: 'line', data: trendData.map((t: any) => (t.sad || 0) * 100), smooth: true, itemStyle: { color: '#F97316' } },
+        ],
+      })
+    }
   if (pieRef.value) {
     const chart = echarts.init(pieRef.value)
-    const wd = store.profileData.weekDistribution
+    const wd = store.profileData.weekDistribution || { happy: 0, sad: 0, neutral: 0, angry: 0, surprise: 0, fear: 0, disgust: 0 }
     chart.setOption({
       tooltip: { trigger: 'item' },
       series: [{ type: 'pie', radius: ['40%', '70%'], data: [

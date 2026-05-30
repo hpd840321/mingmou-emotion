@@ -214,7 +214,7 @@ function connectWebSocket() {
   // Dynamic import STOMP to avoid breaking if unavailable
   import('@stomp/stompjs').then(({ Client }) => {
     const client = new Client({
-      brokerURL: `ws://${window.location.hostname}:8090/ws`,
+                  brokerURL: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
       reconnectDelay: 5000,
       onConnect: () => {
         client.subscribe('/topic/pipeline-progress', (msg) => {

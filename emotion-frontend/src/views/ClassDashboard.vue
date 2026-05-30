@@ -7,7 +7,7 @@
     <div v-if="store.loading" class="loading-state"><el-skeleton :rows="8" animated /></div>
 
     <template v-else-if="store.dashboardData">
-      <KpiCardRow :kpis="store.dashboardData.kpis" />
+      <KpiCardRow :kpis="store.dashboardData.kpis || []" />
 
       <div class="chart-card">
         <h3>课堂情绪时间线</h3>
@@ -85,15 +85,16 @@ watch(() => store.dashboardData, async () => {
   await nextTick()
   if (!timelineRef.value || !store.dashboardData) return
   const chart = echarts.init(timelineRef.value)
+  const timeline = store.dashboardData.timelineData || []
   chart.setOption({
     tooltip: { trigger: 'axis' },
     legend: { data: ['快乐', '悲伤', '愤怒', '中性'] },
     grid: { left: 50, right: 30 },
-    xAxis: { type: 'category', data: store.dashboardData.timelineData.map((t: any) => t.time || '') },
+    xAxis: { type: 'category', data: timeline.map((t: any) => t.time || '') },
     yAxis: { type: 'value', max: 100 },
     series: [
-      { name: '快乐', type: 'line', data: store.dashboardData.timelineData.map((t: any) => (t.happy || 0) * 100), smooth: true, areaStyle: { opacity: 0.3 } },
-      { name: '悲伤', type: 'line', data: store.dashboardData.timelineData.map((t: any) => (t.sad || 0) * 100), smooth: true, areaStyle: { opacity: 0.3 } },
+      { name: '快乐', type: 'line', data: timeline.map((t: any) => (t.happy || 0) * 100), smooth: true, areaStyle: { opacity: 0.3 } },
+      { name: '悲伤', type: 'line', data: timeline.map((t: any) => (t.sad || 0) * 100), smooth: true, areaStyle: { opacity: 0.3 } },
     ],
   })
 })
