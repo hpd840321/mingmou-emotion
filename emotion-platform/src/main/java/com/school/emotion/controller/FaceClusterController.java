@@ -36,4 +36,14 @@ public class FaceClusterController {
         faceLibraryService.mergeCluster(id, body.get("studentId"));
         return ResponseEntity.ok(Map.of("code", 0, "message", "merged"));
     }
+
+    @PostMapping("/{id}/rename")
+    public ResponseEntity<?> rename(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        String studentName = body.get("studentName");
+        if (studentName == null || studentName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("code", 1, "message", "studentName is required"));
+        }
+        faceLibraryService.renameCluster(id, studentName.trim());
+        return ResponseEntity.ok(Map.of("code", 0, "message", "renamed"));
+    }
 }
