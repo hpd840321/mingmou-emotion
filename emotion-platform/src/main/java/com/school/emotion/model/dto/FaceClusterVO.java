@@ -13,6 +13,11 @@ public class FaceClusterVO {
     private List<String> periodLabels;
     private List<String> sampleImages;
 
+    private Long studentId;
+    private String studentName;
+    private String studentNo;
+    private Boolean autoAnnotated;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getClassId() { return classId; }
@@ -29,4 +34,13 @@ public class FaceClusterVO {
     public void setPeriodLabels(List<String> periodLabels) { this.periodLabels = periodLabels; }
     public List<String> getSampleImages() { return sampleImages; }
     public void setSampleImages(List<String> sampleImages) { this.sampleImages = sampleImages; }
+
+    public Long getStudentId() { return studentId; }
+    public void setStudentId(Long studentId) { this.studentId = studentId; }
+    public String getStudentName() { return studentName; }
+    public void setStudentName(String studentName) { this.studentName = studentName; }
+    public String getStudentNo() { return studentNo; }
+    public void setStudentNo(String studentNo) { this.studentNo = studentNo; }
+    public Boolean getAutoAnnotated() { return autoAnnotated; }
+    public void setAutoAnnotated(Boolean autoAnnotated) { this.autoAnnotated = autoAnnotated; }
 }
