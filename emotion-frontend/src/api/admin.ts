@@ -3,13 +3,14 @@ import client from './client'
 export interface FaceClusterVO {
   id: number; classId: number; className?: string; sampleCount: number
   firstSeenAt: string; lastSeenAt: string; periodLabels?: string[]; sampleImages?: string[]
+  studentId?: number; studentName?: string; studentNo?: string; autoAnnotated?: boolean
 }
 
 export interface AnnotateRequest {
   studentName: string; studentNo: string; classId: number
 }
 
-export function fetchClusters(classId: number, status = 'pending'): Promise<FaceClusterVO[]> {
+export function fetchClusters(classId: number, status = 'auto_annotated'): Promise<FaceClusterVO[]> {
   return client.get('/face-clusters', { params: { class_id: classId, status } }).then(r => r.data as FaceClusterVO[])
 }
 
@@ -19,6 +20,10 @@ export function annotateCluster(id: number, data: AnnotateRequest): Promise<void
 
 export function mergeCluster(id: number, studentId: number): Promise<void> {
   return client.post(`/face-clusters/${id}/merge`, { studentId })
+}
+
+export function renameCluster(id: number, studentName: string): Promise<void> {
+  return client.post(`/face-clusters/${id}/rename`, { studentName })
 }
 
 export interface AlertRuleData {

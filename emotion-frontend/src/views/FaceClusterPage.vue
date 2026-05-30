@@ -8,52 +8,52 @@
           <el-option label="初二(1)班" :value="2" />
           <el-option label="初二(2)班" :value="3" />
         </el-select>
-        <el-tag type="warning">待标注: {{ clusters.length }}</el-tag>
+        <el-tag :type="clusters.length > 0 ? 'warning' : 'success'">
+          待标注: {{ clusters.length }}
+        </el-tag>
       </div>
     </div>
 
-    <el-table :data="clusters" style="width:100%" stripe @row-click="openAnnotate">
-      <el-table-column label="预览" width="80">
+    <el-table :data="clusters" style="width:100%" stripe>
+      <el-table-column label="学生姓名" width="130">
         <template #default="{ row }">
-          <el-avatar :size="40" icon="UserFilled" />
+          <span :style="{ color: row.autoAnnotated ? '#909399' : '#409EFF' }">
+            {{ row.studentName || (row.autoAnnotated ? '未命名' : '未标注') }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="学号" width="150">
+        <template #default="{ row }">
+          {{ row.studentNo || '-' }}
         </template>
       </el-table-column>
       <el-table-column prop="sampleCount" label="出现次数" width="100" sortable />
-      <el-table-column label="首次出现" width="180">
+      <el-table-column label="首次出现" width="160">
         <template #default="{ row }">{{ formatTime(row.firstSeenAt) }}</template>
       </el-table-column>
-      <el-table-column label="最近出现" width="180">
+      <el-table-column label="最近出现" width="160">
         <template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template>
       </el-table-column>
-      <el-table-column prop="periodLabels" label="时段分布">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
-          <el-tag v-for="p in (row.periodLabels || ['早读','第1节','第2节']).slice(0,3)" :key="p" size="small" style="margin-right:4px">{{ p }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" type="primary" @click.stop="openAnnotate(row)">标注</el-button>
-          <el-button size="small" @click.stop="openMerge(row)">合并</el-button>
+          <el-button size="small" type="primary" @click="openRename(row)">重命名</el-button>
+          <el-button size="small" @click="openMerge(row)">合并</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <!-- 标注对话框 -->
-    <el-dialog v-model="showAnnotate" title="人脸标注" width="400px">
-      <el-form :model="annotateForm" label-width="80px">
-        <el-form-item label="姓名" required>
-          <el-input v-model="annotateForm.studentName" />
+    <el-dialog v-model="showRename" title="重命名学生" width="360px">
+      <el-form :model="renameForm" label-width="80px">
+        <el-form-item label="当前名称">
+          <el-input :model-value="renameForm.currentName" disabled />
         </el-form-item>
-        <el-form-item label="学号" required>
-          <el-input v-model="annotateForm.studentNo" />
-        </el-form-item>
-        <el-form-item label="班级">
-          <el-input :model-value="'初一班'" disabled />
+        <el-form-item label="新名称" required>
+          <el-input v-model="renameForm.newName" placeholder="输入真实姓名" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAnnotate = false">取消</el-button>
-        <el-button type="primary" @click="submitAnnotate">确认标注</el-button>
+        <el-button @click="showRename = false">取消</el-button>
+        <el-button type="primary" @click="submitRename">确认</el-button>
       </template>
     </el-dialog>
   </div>
@@ -61,14 +61,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchClusters, annotateCluster, type FaceClusterVO, type AnnotateRequest } from '@/api/admin'
+import { fetchClusters, renameCluster, type FaceClusterVO } from '@/api/admin'
 import { ElMessage } from 'element-plus'
 
 const clusters = ref<FaceClusterVO[]>([])
 const classId = ref(1)
-const showAnnotate = ref(false)
+const showRename = ref(false)
 const selectedCluster = ref<FaceClusterVO | null>(null)
-const annotateForm = ref<AnnotateRequest>({ studentName: '', studentNo: '', classId: 1 })
+const renameForm = ref({ currentName: '', newName: '' })
 
 onMounted(() => loadData())
 
@@ -84,20 +84,26 @@ function formatTime(ts: string) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
 
-function openAnnotate(cluster: FaceClusterVO) {
+function openRename(cluster: FaceClusterVO) {
   selectedCluster.value = cluster
-  annotateForm.value = { studentName: '', studentNo: '', classId: classId.value }
-  showAnnotate.value = true
+  renameForm.value = {
+    currentName: cluster.studentName || '未命名',
+    newName: cluster.studentName || ''
+  }
+  showRename.value = true
 }
 
-async function submitAnnotate() {
-  if (!selectedCluster.value) return
+async function submitRename() {
+  if (!selectedCluster.value || !renameForm.value.newName.trim()) {
+    ElMessage.warning('请输入新名称')
+    return
+  }
   try {
-    await annotateCluster(selectedCluster.value.id, annotateForm.value)
-    ElMessage.success('标注成功')
-    showAnnotate.value = false
+    await renameCluster(selectedCluster.value.id, renameForm.value.newName.trim())
+    ElMessage.success('重命名成功')
+    showRename.value = false
     loadData()
-  } catch { ElMessage.error('标注失败') }
+  } catch { ElMessage.error('重命名失败') }
 }
 
 function openMerge(cluster: FaceClusterVO) {
