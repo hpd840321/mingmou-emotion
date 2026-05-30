@@ -1,9 +1,0 @@
-com/school/emotion/model/dto/FaceDetectionResultTest.class
-com/school/emotion/service/FaceClusteringServiceTest.class
-com/school/emotion/client/VisionMindClientTest.class
-com/school/emotion/service/ImageProcessingOrchestratorTest.class
-com/school/emotion/service/AlertEngineTest.class
-com/school/emotion/controller/ImageIngestControllerTest.class
-com/school/emotion/service/EmotionAggregationServiceTest.class
-com/school/emotion/service/FaceProcessingPipelineTest.class
-com/school/emotion/model/dto/EmotionAnalysisResultTest.class
