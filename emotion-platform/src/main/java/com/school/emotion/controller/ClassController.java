@@ -80,11 +80,43 @@ public class ClassController {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("classId", id);
+        data.put("className", classImageRepository.findById(id)
+                .map(ci -> ci.getClazz().getName()).orElse("Class #" + id));
         data.put("date", queryDate.toString());
         data.put("periodLabel", periodLabel);
         data.put("aggregations", aggs);
         data.put("students", studentRows);
         data.put("totalPages", 1);
+        
+        // KPIs derived from class-level aggregations
+        double avgHealth = aggs.stream().mapToDouble(a ->
+                a.getPositiveRatio() != null ? a.getPositiveRatio() * 100 : 0).average().orElse(0);
+        double avgEngagement = aggs.stream().mapToDouble(a ->
+                a.getEngagementScore() != null ? a.getEngagementScore() : 0).average().orElse(0);
+        data.put("kpis", List.of(
+            Map.of("label", "情绪健康度", "value", Math.round(avgHealth), "unit", "%",
+                   "change", null, "changeDirection", "flat", "status", avgHealth > 60 ? "good" : "warning"),
+            Map.of("label", "课堂参与度", "value", Math.round(avgEngagement), "unit", "%",
+                   "change", null, "changeDirection", "flat", "status", avgEngagement > 60 ? "good" : "warning")
+        ));
+        
+        // Timeline data — group aggregations by date
+        List<Map<String, Object>> timeline = aggs.stream()
+            .collect(java.util.stream.Collectors.groupingBy(
+                a -> a.getDate() != null ? a.getDate().toString() : "",
+                java.util.stream.Collectors.averagingDouble(
+                    a -> a.getEngagementScore() != null ? a.getEngagementScore() : 0)))
+            .entrySet().stream()
+            .map(e -> {
+                Map<String, Object> pt = new LinkedHashMap<>();
+                pt.put("time", e.getKey());
+                pt.put("engagement", Math.round(e.getValue()));
+                return pt;
+            })
+            .sorted(java.util.Comparator.comparing(p -> (String) p.get("time")))
+            .toList();
+        data.put("timelineData", timeline);
+        
         return ResponseEntity.ok(Map.of("code", 0, "message", "success", "data", data));
     }
 

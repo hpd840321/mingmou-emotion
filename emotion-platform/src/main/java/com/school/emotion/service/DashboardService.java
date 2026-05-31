@@ -93,6 +93,26 @@ public class DashboardService {
         if (rankings.size() > 5) rankings = rankings.subList(0, 5);
         dto.setAlertRanking(rankings);
 
+        // Trend data — daily engagement over the past 7 days
+        List<java.util.Map<String, Object>> trendData = new ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate d = today.minusDays(i);
+            var dayAggs = aggregationRepository.findByClassIdAndDate(0L, d);  // classId=0 is invalid, we need all
+            // Re-fetch all for this date across classes
+            List<EmotionAggregation> allDay = aggs.stream()
+                    .filter(a -> a.getDate() != null && a.getDate().equals(d))
+                    .toList();
+            double dayEngagement = allDay.stream()
+                    .mapToDouble(a -> a.getEngagementScore() != null ? a.getEngagementScore() : 0)
+                    .average().orElse(0);
+            java.util.Map<String, Object> point = new java.util.LinkedHashMap<>();
+            point.put("date", d.toString());
+            point.put("value", Math.round(dayEngagement));
+            point.put("grade", "全校");
+            trendData.add(point);
+        }
+        dto.setTrendData(trendData);
+
         dto.setCrossClassAlerts(new ArrayList<>());
         return dto;
     }
