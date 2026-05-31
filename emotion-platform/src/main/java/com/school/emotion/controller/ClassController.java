@@ -2,6 +2,7 @@ package com.school.emotion.controller;
 
 import com.school.emotion.model.entity.Student;
 import com.school.emotion.repository.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,18 +18,22 @@ public class ClassController {
     private final FaceRecordRepository faceRecordRepository;
     private final ClassImageRepository classImageRepository;
     private final StudentRepository studentRepository;
+    private final EmotionRecordRepository emotionRecordRepository;
 
     public ClassController(EmotionAggregationRepository aggregationRepository,
                            FaceRecordRepository faceRecordRepository,
                            ClassImageRepository classImageRepository,
-                           StudentRepository studentRepository) {
+                           StudentRepository studentRepository,
+                           EmotionRecordRepository emotionRecordRepository) {
         this.aggregationRepository = aggregationRepository;
         this.faceRecordRepository = faceRecordRepository;
         this.classImageRepository = classImageRepository;
         this.studentRepository = studentRepository;
+        this.emotionRecordRepository = emotionRecordRepository;
     }
 
     @GetMapping("/{id}/dashboard")
+    @Transactional(readOnly = true)
     public ResponseEntity<?> dashboard(
             @PathVariable Long id,
             @RequestParam(required = false) String date,
@@ -38,11 +43,14 @@ public class ClassController {
 
         // Build student rows from Student records, enriching with aggregation data
         List<Student> students = studentRepository.findByClazz_Id(id);
-        List<Map<String, Object>> studentRows = students.stream().map(s -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", s.getId());
-            row.put("name", s.getName());
-            row.put("studentNo", s.getStudentNo());
+        List<Map<String, Object>> studentRows = new ArrayList<>();
+
+        if (!students.isEmpty()) {
+            studentRows = students.stream().map(s -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", s.getId());
+                row.put("name", s.getName());
+                row.put("studentNo", s.getStudentNo());
 
             var studentAgg = aggs.stream()
                     .filter(a -> a.getStudentId() != null && a.getStudentId().equals(s.getId()))
@@ -76,7 +84,53 @@ public class ClassController {
             row.put("isAlert", false);
             row.put("isAbsent", false);
             return row;
-        }).toList();
+        }).collect(java.util.stream.Collectors.toList());
+        } else {
+            // Fallback: derive face-level records from emotion_record + face_record
+            Map<String, Long> emotionCounts = emotionRecordRepository.findAll().stream()
+                    .filter(er -> er.getFaceRecord() != null)
+                    .filter(er -> {
+                        var fci = er.getFaceRecord().getClassImage();
+                        return fci != null && fci.getClazz() != null && fci.getClazz().getId().equals(id);
+                    })
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            er -> er.getDominantEmotion() != null ? er.getDominantEmotion() : "neutral",
+                            java.util.stream.Collectors.counting()));
+            long total = emotionCounts.values().stream().mapToLong(Long::longValue).sum();
+
+            // Create virtual student rows from emotion records
+            var erList = emotionRecordRepository.findAll().stream()
+                    .filter(er -> er.getFaceRecord() != null)
+                    .filter(er -> {
+                        var fci = er.getFaceRecord().getClassImage();
+                        return fci != null && fci.getClazz() != null && fci.getClazz().getId().equals(id);
+                    })
+                    .limit(200)
+                    .toList();
+
+            for (com.school.emotion.model.entity.EmotionRecord er : erList) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                var fr = er.getFaceRecord();
+                var ci = fr.getClassImage();
+                row.put("id", "face_" + fr.getId());
+                row.put("name", "人脸#" + fr.getId());
+                row.put("studentNo", "");
+                row.put("faceRecordId", fr.getId());
+                row.put("croppedImageUrl", com.school.emotion.controller.SchoolTreeController.toImageUrl(fr.getCroppedImageUrl()));
+                row.put("dominantEmotion", er.getDominantEmotion());
+                row.put("dominantConfidence", er.getDominantConfidence());
+                row.put("happy", er.getEmotionHappy() != null ? Math.round(er.getEmotionHappy() * 100) : 0);
+                row.put("neutral", er.getEmotionNeutral() != null ? Math.round(er.getEmotionNeutral() * 100) : 0);
+                row.put("sad", er.getEmotionSad() != null ? Math.round(er.getEmotionSad() * 100) : 0);
+                row.put("angry", er.getEmotionAngry() != null ? Math.round(er.getEmotionAngry() * 100) : 0);
+                row.put("engagement", er.getDominantConfidence() != null ? Math.round(er.getDominantConfidence() * 100) : 0);
+                row.put("captureTime", ci != null && ci.getCaptureTime() != null ? ci.getCaptureTime().toString() : null);
+                row.put("periodLabel", ci != null ? ci.getPeriodLabel() : null);
+                row.put("isAlert", false);
+                row.put("isAbsent", false);
+                studentRows.add(row);
+            }
+        }
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("classId", id);
@@ -94,10 +148,8 @@ public class ClassController {
         double avgEngagement = aggs.stream().mapToDouble(a ->
                 a.getEngagementScore() != null ? a.getEngagementScore() : 0).average().orElse(0);
         data.put("kpis", List.of(
-            Map.of("label", "情绪健康度", "value", Math.round(avgHealth), "unit", "%",
-                   "change", null, "changeDirection", "flat", "status", avgHealth > 60 ? "good" : "warning"),
-            Map.of("label", "课堂参与度", "value", Math.round(avgEngagement), "unit", "%",
-                   "change", null, "changeDirection", "flat", "status", avgEngagement > 60 ? "good" : "warning")
+            createKpiMap("情绪健康度", Math.round(avgHealth), "%", avgHealth > 60 ? "good" : "warning"),
+            createKpiMap("课堂参与度", Math.round(avgEngagement), "%", avgEngagement > 60 ? "good" : "warning")
         ));
         
         // Timeline data — group aggregations by date
@@ -118,6 +170,17 @@ public class ClassController {
         data.put("timelineData", timeline);
         
         return ResponseEntity.ok(Map.of("code", 0, "message", "success", "data", data));
+    }
+
+    private Map<String, Object> createKpiMap(String label, long value, String unit, String status) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("label", label);
+        m.put("value", value);
+        m.put("unit", unit);
+        m.put("change", null);
+        m.put("changeDirection", "flat");
+        m.put("status", status);
+        return m;
     }
 
     @GetMapping("/{id}/emotion-trend")

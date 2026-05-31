@@ -19,7 +19,7 @@ public class SchoolTreeController {
     private final EmotionRecordRepository emotionRecordRepository;
     private final FaceClusterRepository faceClusterRepository;
 
-    private static String toImageUrl(String absolutePath) {
+    static String toImageUrl(String absolutePath) {
         if (absolutePath == null) return null;
         int idx = absolutePath.indexOf("/images/");
         if (idx >= 0) return absolutePath.substring(idx);
