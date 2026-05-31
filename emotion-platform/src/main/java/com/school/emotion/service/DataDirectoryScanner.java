@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +51,7 @@ public class DataDirectoryScanner {
     private final ClassImageRepository classImageRepository;
     private final RedisTemplate<String, String> redisTemplate;
     private final Path dataRoot;
+    private volatile boolean scanning = false;
 
     public DataDirectoryScanner(
             GradeRepository gradeRepository,
@@ -64,6 +66,25 @@ public class DataDirectoryScanner {
         this.classImageRepository = classImageRepository;
         this.redisTemplate = redisTemplate;
         this.dataRoot = Path.of(dataRoot);
+    }
+
+    @Scheduled(fixedDelayString = "${app.scan.interval-ms:300000}", initialDelay = 60000)
+    public void scheduledSync() {
+        if (scanning) {
+            log.debug("Scan already in progress, skipping scheduled sync");
+            return;
+        }
+        scanning = true;
+        try {
+            ScanReport report = scanAll();
+            if (report.imported() > 0) {
+                log.info("Scheduled sync: imported {} new images (total={})", report.imported(), report.total());
+            }
+        } catch (Exception e) {
+            log.error("Scheduled sync failed: {}", e.getMessage());
+        } finally {
+            scanning = false;
+        }
     }
 
     /**
@@ -146,8 +167,9 @@ public class DataDirectoryScanner {
                             for (Path img : imageFiles) {
                                 total++;
                                 try {
-                                    importImage(img, schoolClass, date, periodKey);
-                                    imported++;
+                                    if (importImage(img, schoolClass, date, periodKey)) {
+                                        imported++;
+                                    }
                                 } catch (Exception e) {
                                     errors.add(img.getFileName() + ": " + e.getMessage());
                                     log.error("Import failed: {}", img, e);
@@ -164,13 +186,12 @@ public class DataDirectoryScanner {
         return new ScanResult(total, imported, errors);
     }
 
-    private void importImage(Path imgPath, SchoolClass schoolClass, LocalDate date, String periodKey) {
+    private boolean importImage(Path imgPath, SchoolClass schoolClass, LocalDate date, String periodKey) {
         String filename = imgPath.getFileName().toString();
         String imageUrl = imgPath.toAbsolutePath().toString();
 
-        // Skip if already imported
         if (classImageRepository.existsByImageUrl(imageUrl)) {
-            return;
+            return false;
         }
 
         var matcher = FILENAME_PATTERN.matcher(filename);
@@ -203,6 +224,7 @@ public class DataDirectoryScanner {
 
         log.debug("Imported image: {} → class={}, period={}, time={}",
                 filename, schoolClass.getName(), periodKey, captureTime);
+        return true;
     }
 
     private Grade getOrCreateGrade(String name) {
