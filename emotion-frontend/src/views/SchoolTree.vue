@@ -51,8 +51,15 @@
         <div class="student-list">
           <el-card v-for="stu in selectedNode.children" :key="stu.id" class="stu-card" shadow="hover"
             @click="selectStudent(stu)" :class="{ active: currentStudent?.id === stu.id }">
+            <div class="stu-avatar">
+              <el-image v-if="stu.sampleImages && stu.sampleImages.length > 0"
+                :src="stu.sampleImages[0]" class="face-img" fit="cover" />
+              <div v-else-if="stu.croppedImageUrl" class="face-img-placeholder">
+                <el-image :src="stu.croppedImageUrl" class="face-img" fit="cover" />
+              </div>
+              <div v-else class="face-img-placeholder">👤</div>
+            </div>
             <div class="stu-name">{{ stu.label }}</div>
-            <div class="stu-no">{{ stu.studentNo }}</div>
           </el-card>
         </div>
       </div>
@@ -223,9 +230,12 @@ function emotionIcon(e: string) { return { happy:'😊', sad:'😢', angry:'😠
 .empty-state h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
 .quick-links { display: flex; gap: var(--space-2); flex-wrap: wrap; margin: var(--space-4) 0; }
 .student-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-2); }
-.stu-card { cursor: pointer; text-align: center; transition: all 0.15s; }
+.stu-card { cursor: pointer; text-align: center; transition: all 0.15s; padding: var(--space-3) 0; }
 .stu-card:hover { border-color: var(--color-primary); }
 .stu-card.active { border-color: var(--color-primary); background: #EFF6FF; }
+.stu-avatar { width: 72px; height: 72px; margin: 0 auto var(--space-2); border-radius: 50%; overflow: hidden; border: 2px solid var(--color-border); }
+.face-img { width: 100%; height: 100%; object-fit: cover; }
+.face-img-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 28px; background: var(--color-bg); }
 .stu-name { font-weight: 500; }
 .stu-no { font-size: var(--text-xs); color: var(--color-muted-fg); }
 .stu-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4); }
