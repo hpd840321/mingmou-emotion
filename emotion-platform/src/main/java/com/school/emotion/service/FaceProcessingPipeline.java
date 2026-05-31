@@ -140,6 +140,31 @@ public class FaceProcessingPipeline {
         byte[] imageBytes;
         try {
             imageBytes = java.nio.file.Files.readAllBytes(imagePath);
+            // Scale down large classroom photos for faster face detection
+            // Original 2560×1920 → scaled to max 1280px on longest side
+            if (imageBytes.length > 300 * 1024) {
+                java.awt.image.BufferedImage original = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
+                if (original != null) {
+                    int w = original.getWidth();
+                    int h = original.getHeight();
+                    int maxDim = Math.max(w, h);
+                    if (maxDim > 1280) {
+                        double scale = 1280.0 / maxDim;
+                        int nw = (int) (w * scale);
+                        int nh = (int) (h * scale);
+                        java.awt.image.BufferedImage scaled = new java.awt.image.BufferedImage(nw, nh, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                        java.awt.Graphics2D g = scaled.createGraphics();
+                        g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                        g.drawImage(original, 0, 0, nw, nh, null);
+                        g.dispose();
+                        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                        javax.imageio.ImageIO.write(scaled, "JPEG", baos);
+                        imageBytes = baos.toByteArray();
+                        log.debug("Scaled image {} from {}x{} to {}x{} ({} bytes)", ci.getId(), w, h, nw, nh, imageBytes.length);
+                    }
+                }
+            }
         } catch (IOException e) {
             markFailed(ci, "Cannot read file: " + e.getMessage());
             return new ProcessResult(false, false);
