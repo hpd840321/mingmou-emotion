@@ -65,14 +65,18 @@
       </div>
 
       <!-- 学生选中：详情 + 原始数据 -->
-      <div v-else-if="selectedNode.type === 'student'" class="student-detail">
+      <div v-else-if="selectedNode.type === 'student' || selectedNode.type === 'face'" class="student-detail">
         <div class="stu-header">
-          <div>
-            <h2>{{ selectedNode.label }}</h2>
-            <span class="stu-meta">学号: {{ selectedNode.studentNo }}</span>
+          <div class="stu-header-info">
+            <el-image v-if="selectedNode.croppedImageUrl" :src="selectedNode.croppedImageUrl" class="stu-avatar-img" fit="cover" />
+            <div>
+              <h2>{{ selectedNode.label }}</h2>
+              <span v-if="selectedNode.studentNo" class="stu-meta">学号: {{ selectedNode.studentNo }}</span>
+              <span v-if="selectedNode.confidence" class="stu-meta">置信度: {{ (selectedNode.confidence * 100).toFixed(0) }}%</span>
+            </div>
           </div>
           <div class="stu-actions">
-            <el-button type="primary" size="small" @click="$router.push(`/student/${selectedNode.studentId}/profile`)">
+            <el-button v-if="selectedNode.studentId" type="primary" size="small" @click="$router.push(`/student/${selectedNode.studentId}/profile`)">
               查看完整档案 →
             </el-button>
           </div>
@@ -130,7 +134,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchSchoolTree, fetchStudentRawEmotions, type TreeNode, type RawEmotionRecord } from '@/api/schoolTree'
+import { fetchSchoolTree, fetchStudentRawEmotions, fetchFaceEmotion, type TreeNode, type RawEmotionRecord } from '@/api/schoolTree'
 import * as echarts from 'echarts'
 
 const router = useRouter()
@@ -153,11 +157,10 @@ onMounted(() => { fetchSchoolTree().then(d => treeData.value = d) })
 
 function onNodeClick(data: TreeNode) {
   selectedNode.value = data
-  if (data.type === 'student') {
-    loadStudentEmotions(data)
+  if (data.type === 'student' || data.type === 'face') {
     currentStudent.value = data
+    loadStudentEmotions(data)
   } else if (data.type === 'face_group') {
-    // For face groups, load emotions by the cluster's face records
     currentStudent.value = null
     rawEmotions.value = []
   } else {
@@ -173,10 +176,15 @@ function selectStudent(stu: TreeNode) {
 }
 
 async function loadStudentEmotions(stu: TreeNode) {
-  if (!stu.studentId) return
   loadingEmotions.value = true
   try {
-    rawEmotions.value = await fetchStudentRawEmotions(stu.studentId)
+    if (stu.studentId) {
+      rawEmotions.value = await fetchStudentRawEmotions(stu.studentId)
+    } else if (stu.faceRecordId) {
+      rawEmotions.value = await fetchFaceEmotion(stu.faceRecordId)
+    } else {
+      rawEmotions.value = []
+    }
   } catch { rawEmotions.value = [] }
   finally { loadingEmotions.value = false }
 }
@@ -239,6 +247,8 @@ function emotionIcon(e: string) { return { happy:'😊', sad:'😢', angry:'😠
 .stu-name { font-weight: 500; }
 .stu-no { font-size: var(--text-xs); color: var(--color-muted-fg); }
 .stu-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-4); }
+.stu-header-info { display: flex; align-items: center; gap: var(--space-3); }
+.stu-avatar-img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; border: 2px solid var(--color-border); }
 .stu-header h2 { font-size: var(--text-xl); font-weight: 600; }
 .stu-meta { font-size: var(--text-sm); color: var(--color-muted-fg); }
 .chart-summary { display: flex; gap: var(--space-4); margin-bottom: var(--space-4); }

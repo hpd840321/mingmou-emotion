@@ -23,3 +23,7 @@ export function fetchSchoolTree(): Promise<TreeNode[]> {
 export function fetchStudentRawEmotions(studentId: number): Promise<RawEmotionRecord[]> {
   return client.get(`/school-tree/student/${studentId}/raw-emotions`).then(r => r.data as RawEmotionRecord[])
 }
+
+export function fetchFaceEmotion(faceRecordId: number): Promise<RawEmotionRecord[]> {
+  return client.get(`/school-tree/face/${faceRecordId}/emotion`).then(r => r.data as RawEmotionRecord[])
+}

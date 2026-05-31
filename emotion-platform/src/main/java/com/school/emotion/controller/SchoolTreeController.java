@@ -2,6 +2,7 @@ package com.school.emotion.controller;
 
 import com.school.emotion.model.entity.*;
 import com.school.emotion.repository.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,6 +43,7 @@ public class SchoolTreeController {
 
     /** 获取学校树结构: grades → classes → [students|face_groups] */
     @GetMapping
+    @Transactional(readOnly = true)
     public ResponseEntity<?> getTree() {
         List<Grade> grades = gradeRepository.findAll();
         List<Map<String, Object>> tree = new ArrayList<>();
@@ -145,6 +147,7 @@ public class SchoolTreeController {
 
     /** 获取学生原始情绪数据 */
     @GetMapping("/student/{id}/raw-emotions")
+    @Transactional(readOnly = true)
     public ResponseEntity<?> getStudentRawEmotions(@PathVariable Long id) {
         List<FaceRecord> faceRecords = faceRecordRepository.findByStudentId(id);
         List<Map<String, Object>> records = new ArrayList<>();
@@ -177,5 +180,53 @@ public class SchoolTreeController {
             records.add(record);
         }
         return ResponseEntity.ok(Map.of("code", 0, "data", records));
+    }
+
+    /** 根据 faceRecordId 获取单条情绪数据 */
+    @GetMapping("/face/{faceRecordId}/emotion")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> getFaceEmotion(@PathVariable Long faceRecordId) {
+        FaceRecord fr = faceRecordRepository.findById(faceRecordId).orElse(null);
+        if (fr == null) {
+            return ResponseEntity.ok(Map.of("code", 1, "message", "face not found"));
+        }
+        EmotionRecord er = emotionRecordRepository.findByFaceRecordId(faceRecordId);
+        if (er == null) {
+            Map<String, Object> emptyEmotions = new LinkedHashMap<>();
+            for (String k : new String[]{"happy","sad","angry","surprise","fear","disgust","neutral"}) {
+                emptyEmotions.put(k, 0);
+            }
+            return ResponseEntity.ok(Map.of("code", 0, "data", List.of(Map.of(
+                "faceRecordId", faceRecordId,
+                "croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()),
+                "imageUrl", fr.getClassImage() != null ? toImageUrl(fr.getClassImage().getImageUrl()) : null,
+                "captureTime", fr.getClassImage() != null ? fr.getClassImage().getCaptureTime().toString() : null,
+                "periodLabel", fr.getClassImage() != null ? fr.getClassImage().getPeriodLabel() : null,
+                "dominantEmotion", null, "dominantConfidence", null,
+                "emotions", emptyEmotions
+            ))));
+        }
+
+        Map<String, Object> emotions = new LinkedHashMap<>();
+        emotions.put("happy", er.getEmotionHappy());
+        emotions.put("sad", er.getEmotionSad());
+        emotions.put("angry", er.getEmotionAngry());
+        emotions.put("surprise", er.getEmotionSurprise());
+        emotions.put("fear", er.getEmotionFear());
+        emotions.put("disgust", er.getEmotionDisgust());
+        emotions.put("neutral", er.getEmotionNeutral());
+
+        Map<String, Object> record = new HashMap<>();
+        record.put("faceRecordId", fr.getId());
+        record.put("croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()));
+        record.put("imageUrl", fr.getClassImage() != null ? toImageUrl(fr.getClassImage().getImageUrl()) : null);
+        record.put("captureTime", fr.getClassImage() != null ? fr.getClassImage().getCaptureTime().toString() : null);
+        record.put("periodLabel", fr.getClassImage() != null ? fr.getClassImage().getPeriodLabel() : null);
+        record.put("bbox", fr.getBbox());
+        record.put("confidence", fr.getConfidence());
+        record.put("dominantEmotion", er.getDominantEmotion());
+        record.put("dominantConfidence", er.getDominantConfidence());
+        record.put("emotions", emotions);
+        return ResponseEntity.ok(Map.of("code", 0, "data", List.of(record)));
     }
 }
