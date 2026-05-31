@@ -56,6 +56,9 @@ function loadData() {
   store.loadHeatmap(classId, { date: currentDate.value, period_label: currentPeriod.value })
 }
 
+watch(currentDate, () => loadData())
+watch(currentPeriod, () => loadData())
+
 function getSeat(row: number, col: number) {
   return store.heatmapData?.seats.find(s => s.row === row && s.col === col)
 }

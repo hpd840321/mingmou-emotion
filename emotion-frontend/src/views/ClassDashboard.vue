@@ -78,8 +78,18 @@ const filteredStudents = computed(() => {
 onMounted(() => loadData())
 function loadData() { store.loadDashboard(classId, { date: currentDate.value, period_label: currentPeriod.value }) }
 watch(currentPeriod, () => loadData())
-function goPrev() { loadData() }
-function goNext() { loadData() }
+function goPrev() {
+  const d = new Date(currentDate.value)
+  d.setDate(d.getDate() - 1)
+  currentDate.value = d.toISOString().slice(0, 10)
+  loadData()
+}
+function goNext() {
+  const d = new Date(currentDate.value)
+  d.setDate(d.getDate() + 1)
+  currentDate.value = d.toISOString().slice(0, 10)
+  loadData()
+}
 
 watch(() => store.dashboardData, async () => {
   await nextTick()
