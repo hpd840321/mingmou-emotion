@@ -9,7 +9,7 @@ public class FaceCluster {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "class_id", nullable = false)
+    @Column(name = "class_id")
     private Long classId;
 
     @Column(name = "cluster_key", nullable = false, length = 64)
