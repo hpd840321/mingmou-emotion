@@ -29,6 +29,8 @@ spring:
 app:
   data:
     dir: ../data
+  image:
+    cropped-dir: emotion-platform/images/cropped
   scan:
     interval-ms: 300000
   external-push:
