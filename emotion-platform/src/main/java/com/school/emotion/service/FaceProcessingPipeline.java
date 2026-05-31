@@ -160,85 +160,95 @@ public class FaceProcessingPipeline {
             return new ProcessResult(false, false);
         }
 
-        // Filter by confidence threshold and pick best face
-        FaceDetectionResult.Face bestFace = faces.stream()
+        // Filter by confidence threshold, keep ALL valid faces
+        List<FaceDetectionResult.Face> validFaces = faces.stream()
                 .filter(f -> f.getConfidence() != null && f.getConfidence() >= confidenceThreshold)
-                .max(java.util.Comparator.comparing(FaceDetectionResult.Face::getConfidence))
-                .orElse(null);
+                .sorted(java.util.Comparator.comparing(FaceDetectionResult.Face::getConfidence).reversed())
+                .toList();
 
-        if (bestFace == null) {
+        if (validFaces.isEmpty()) {
             markCompleted(ci);
             return new ProcessResult(false, false);
         }
 
-        // Create face_record (student association happens via FaceLibraryService annotation)
-        FaceDetectionResult.BBox bbox = bestFace.getBbox();
-        FaceRecord fr = new FaceRecord();
-        fr.setClassImage(ci);
-        fr.setStudent(null);
-        fr.setBbox(bbox != null ? String.format("{\"x\":%.1f,\"y\":%.1f,\"width\":%.1f,\"height\":%.1f}",
-                bbox.getX(), bbox.getY(), bbox.getWidth(), bbox.getHeight()) : null);
-        fr.setConfidence(bestFace.getConfidence());
-        fr.setStatus(FaceStatus.DETECTED);
-        fr = faceRecordRepository.save(fr);
+        // Process each valid face: create FaceRecord, crop, register to library, analyze emotion
+        int faceCount = 0;
+        int emotionCount = 0;
+        for (FaceDetectionResult.Face face : validFaces) {
+            FaceDetectionResult.BBox bbox = face.getBbox();
+            FaceRecord fr = new FaceRecord();
+            fr.setClassImage(ci);
+            fr.setStudent(null);
+            fr.setBbox(bbox != null ? String.format("{\"x\":%.1f,\"y\":%.1f,\"width\":%.1f,\"height\":%.1f}",
+                    bbox.getX(), bbox.getY(), bbox.getWidth(), bbox.getHeight()) : null);
+            fr.setConfidence(face.getConfidence());
+            fr.setQuality(face.getQuality());
+            fr.setStatus(FaceStatus.DETECTED);
+            fr = faceRecordRepository.save(fr);
+            faceCount++;
 
-        // Crop face
-        try {
-            var school = "官渡一中";
-            var className = "初一班";
-            String date = ci.getCaptureTime().toLocalDate().toString();
-            String period = ci.getPeriodLabel() != null ? ci.getPeriodLabel() : "other";
+            // Crop face + per-face emotion analysis
+            try {
+                var school = "官渡一中";
+                var className = "初一班";
+                String date = ci.getCaptureTime().toLocalDate().toString();
+                String period = ci.getPeriodLabel() != null ? ci.getPeriodLabel() : "other";
 
-            var cropResult = croppingService.cropFace(
-                    imagePath,
-                    bbox != null ? Math.round(bbox.getX()) : 0, bbox != null ? Math.round(bbox.getY()) : 0,
-                    bbox != null ? Math.round(bbox.getWidth()) : 0, bbox != null ? Math.round(bbox.getHeight()) : 0,
-                    school, className, date, period, fr.getId());
+                var cropResult = croppingService.cropFace(
+                        imagePath,
+                        bbox != null ? Math.round(bbox.getX()) : 0, bbox != null ? Math.round(bbox.getY()) : 0,
+                        bbox != null ? Math.round(bbox.getWidth()) : 0, bbox != null ? Math.round(bbox.getHeight()) : 0,
+                        school, className, date, period, fr.getId());
 
-            if (cropResult.success()) {
-                fr.setCroppedImageUrl(cropResult.path());
+                if (cropResult.success()) {
+                    fr.setCroppedImageUrl(cropResult.path());
 
-                // Register to VisionMind face library
-                long schoolId = gradeRepository.findAll().stream().findFirst().map(Grade::getId).orElse(1L);
-                registrationService.registerFaceToLibrary(fr, Path.of(cropResult.path()),
-                        schoolId, ci.getClazz().getId());
-            }
-        } catch (Exception e) {
-            log.warn("Face cropping/registration failed for record {}: {}", fr.getId(), e.getMessage());
-        }
+                    // Register to VisionMind face library
+                    long schoolId = gradeRepository.findAll().stream().findFirst().map(Grade::getId).orElse(1L);
+                    registrationService.registerFaceToLibrary(fr, Path.of(cropResult.path()),
+                            schoolId, ci.getClazz().getId());
 
-        // Emotion analysis via REST /v1/face/attribute (covers all faces in full image)
-        try {
-            EmotionAnalysisResult emotionResult = visionMindClient.analyzeAttribute(imageBytes);
-            if (emotionResult != null && emotionResult.getDominantEmotion() != null) {
-                EmotionRecord er = new EmotionRecord();
-                er.setFaceRecord(fr);
-                er.setDominantEmotion(emotionResult.getDominantEmotion());
-                er.setDominantConfidence(emotionResult.getDominantConfidence());
+                    // Per-face emotion analysis on cropped image
+                    try {
+                        byte[] cropBytes = java.nio.file.Files.readAllBytes(Path.of(cropResult.path()));
+                        EmotionAnalysisResult emotionResult = visionMindClient.analyzeAttribute(cropBytes);
+                        if (emotionResult != null && emotionResult.getDominantEmotion() != null) {
+                            EmotionRecord er = new EmotionRecord();
+                            er.setFaceRecord(fr);
+                            er.setDominantEmotion(emotionResult.getDominantEmotion());
+                            er.setDominantConfidence(emotionResult.getDominantConfidence());
 
-                Map<String, Float> probs = emotionResult.getEmotions();
-                if (probs != null) {
-                    er.setEmotionHappy(probs.get("happy"));
-                    er.setEmotionSad(probs.get("sad"));
-                    er.setEmotionAngry(probs.get("angry"));
-                    er.setEmotionSurprise(probs.get("surprise"));
-                    er.setEmotionFear(probs.get("fear"));
-                    er.setEmotionDisgust(probs.get("disgust"));
-                    er.setEmotionNeutral(probs.get("neutral"));
+                            Map<String, Float> probs = emotionResult.getEmotions();
+                            if (probs != null) {
+                                er.setEmotionHappy(probs.get("happy"));
+                                er.setEmotionSad(probs.get("sad"));
+                                er.setEmotionAngry(probs.get("angry"));
+                                er.setEmotionSurprise(probs.get("surprise"));
+                                er.setEmotionFear(probs.get("fear"));
+                                er.setEmotionDisgust(probs.get("disgust"));
+                                er.setEmotionNeutral(probs.get("neutral"));
+                            }
+
+                            emotionRecordRepository.save(er);
+                            fr.setStatus(FaceStatus.IDENTIFIED);
+                            emotionCount++;
+                            log.info("Emotion record created for face {}: {} (confidence={})",
+                                    fr.getId(), er.getDominantEmotion(), fr.getConfidence());
+                        }
+                    } catch (Exception e) {
+                        log.warn("Emotion analysis failed for face {}: {}", fr.getId(), e.getMessage());
+                    }
                 }
-
-                emotionRecordRepository.save(er);
-                fr.setStatus(FaceStatus.IDENTIFIED);
-                log.info("Emotion record {} created for face {}: {}", er.getId(), fr.getId(), er.getDominantEmotion());
+            } catch (Exception e) {
+                log.warn("Face cropping/registration failed for record {}: {}", fr.getId(), e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("Emotion analysis failed for image {}: {}", ci.getId(), e.getMessage());
+
+            faceRecordRepository.save(fr);
         }
 
-        faceRecordRepository.save(fr);
-
+        log.info("Image {} processed: {} faces, {} emotions", ci.getId(), faceCount, emotionCount);
         markCompleted(ci);
-        return new ProcessResult(true, true);
+        return new ProcessResult(faceCount > 0, emotionCount > 0);
     }
 
     private void markCompleted(ClassImage ci) {

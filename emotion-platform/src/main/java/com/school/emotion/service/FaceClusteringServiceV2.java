@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -30,6 +31,7 @@ public class FaceClusteringServiceV2 {
     private final StudentRepository studentRepository;
     private final FaceRecordRepository faceRecordRepository;
     private final SchoolClassRepository schoolClassRepository;
+    private final EmotionAggregationService emotionAggregationService;
     private final String qdrantUrl;
     private final float similarityThreshold;
     private final int minClusterSize;
@@ -43,6 +45,7 @@ public class FaceClusteringServiceV2 {
             StudentRepository studentRepository,
             FaceRecordRepository faceRecordRepository,
             SchoolClassRepository schoolClassRepository,
+            EmotionAggregationService emotionAggregationService,
             @Value("${app.clustering.qdrant-url:http://localhost:6333}") String qdrantUrl,
             @Value("${app.clustering.similarity-threshold:0.7}") float similarityThreshold,
             @Value("${app.clustering.min-cluster-size:3}") int minClusterSize) {
@@ -51,6 +54,7 @@ public class FaceClusteringServiceV2 {
         this.studentRepository = studentRepository;
         this.faceRecordRepository = faceRecordRepository;
         this.schoolClassRepository = schoolClassRepository;
+        this.emotionAggregationService = emotionAggregationService;
         this.qdrantUrl = qdrantUrl;
         this.similarityThreshold = similarityThreshold;
         this.minClusterSize = minClusterSize;
@@ -210,6 +214,14 @@ public class FaceClusteringServiceV2 {
                 }
 
                 cluster.setStudentId(student.getId());
+
+                // Trigger per-student emotion aggregation
+                try {
+                    emotionAggregationService.aggregate(student.getId(), LocalDate.now(), 0L);
+                } catch (Exception aggEx) {
+                    log.warn("Failed to aggregate emotion for student {}: {}", student.getId(), aggEx.getMessage());
+                }
+
                 cluster.setStatus("auto_annotated");
                 clusterRepository.save(cluster);
 

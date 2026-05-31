@@ -44,4 +44,6 @@ public class AlertLog {
     public void setMessage(String message) { this.message = message; }
     public Boolean getAcknowledged() { return acknowledged; }
     public void setAcknowledged(Boolean acknowledged) { this.acknowledged = acknowledged; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
 }
