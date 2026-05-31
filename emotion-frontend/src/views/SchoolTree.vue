@@ -191,7 +191,7 @@ watch(rawEmotions, async () => {
   const chart = echarts.init(emotionChartRef.value)
   chart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['快乐', '悲伤', '愤怒', '中性', '惊讶', '恐惧'] },
+    legend: { data: ['快乐', '悲伤'] },
     grid: { left: 50, right: 20 },
     xAxis: { type: 'category', data: rawEmotions.value.map(r => formatTime(r.captureTime)) },
     yAxis: { type: 'value', max: 100 },

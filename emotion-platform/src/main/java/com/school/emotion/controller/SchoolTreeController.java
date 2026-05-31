@@ -19,6 +19,13 @@ public class SchoolTreeController {
     private final EmotionRecordRepository emotionRecordRepository;
     private final FaceClusterRepository faceClusterRepository;
 
+    private static String toImageUrl(String absolutePath) {
+        if (absolutePath == null) return null;
+        int idx = absolutePath.indexOf("/images/");
+        if (idx >= 0) return absolutePath.substring(idx);
+        return absolutePath;
+    }
+
     public SchoolTreeController(GradeRepository gradeRepository,
                                 SchoolClassRepository classRepository,
                                 StudentRepository studentRepository,
@@ -73,7 +80,7 @@ public class SchoolTreeController {
                         List<String> sampleImages = faces.stream()
                                 .filter(f -> f.getCroppedImageUrl() != null)
                                 .limit(4)
-                                .map(FaceRecord::getCroppedImageUrl)
+                                .map(f -> toImageUrl(f.getCroppedImageUrl()))
                                 .collect(Collectors.toList());
                         studentNode.put("sampleImages", sampleImages);
                         studentNode.put("faceCount", faces.size());
@@ -100,7 +107,7 @@ public class SchoolTreeController {
                                 String libFaceId = matcher.group(1);
                                 faceRecordRepository.findByLibFaceId(libFaceId)
                                         .filter(fr -> fr.getCroppedImageUrl() != null)
-                                        .ifPresent(fr -> samples.add(fr.getCroppedImageUrl()));
+                                        .ifPresent(fr -> samples.add(toImageUrl(fr.getCroppedImageUrl())));
                             }
                             groupNode.put("sampleImages", samples);
                         } else {
@@ -118,10 +125,10 @@ public class SchoolTreeController {
                             faceNode.put("label", "人脸#" + fr.getId());
                             faceNode.put("type", "face");
                             faceNode.put("faceRecordId", fr.getId());
-                            faceNode.put("croppedImageUrl", fr.getCroppedImageUrl());
+                            faceNode.put("croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()));
                             faceNode.put("confidence", fr.getConfidence());
                             if (fr.getCroppedImageUrl() != null) {
-                                faceNode.put("sampleImages", List.of(fr.getCroppedImageUrl()));
+                                faceNode.put("sampleImages", List.of(toImageUrl(fr.getCroppedImageUrl())));
                             }
                             childNodes.add(faceNode);
                         });
@@ -148,8 +155,8 @@ public class SchoolTreeController {
 
             Map<String, Object> record = new HashMap<>();
             record.put("faceRecordId", fr.getId());
-            record.put("croppedImageUrl", fr.getCroppedImageUrl());
-            record.put("imageUrl", fr.getClassImage() != null ? fr.getClassImage().getImageUrl() : null);
+            record.put("croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()));
+            record.put("imageUrl", fr.getClassImage() != null ? toImageUrl(fr.getClassImage().getImageUrl()) : null);
             record.put("captureTime", fr.getClassImage() != null ?
                     fr.getClassImage().getCaptureTime().toString() : null);
             record.put("periodLabel", fr.getClassImage() != null ?

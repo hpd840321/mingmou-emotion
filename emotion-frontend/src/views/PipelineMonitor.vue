@@ -178,7 +178,6 @@ async function refreshTree() {
     const res: any = await client.get('/admin/pipeline/data-dirs')
     const d = res.data || res
     treeData.value = normalizeTree(d.schools || [])
-    console.log(`[Pipeline] Tree loaded: ${treeData.value.length} schools`)
   } catch (e: any) {
     console.error('[Pipeline] Tree load failed:', e.message)
   }
@@ -190,7 +189,6 @@ async function refreshStatus() {
   try {
     const res: any = await client.get('/admin/pipeline/status')
     const d = res.data || res
-    console.log('[Pipeline] Status loaded:', d.totalFiles, 'files')
     Object.assign(dbStatus.value, d)
   if (d.running !== undefined) running.value = d.running
   if (d.speed !== undefined) speed.value = d.speed
