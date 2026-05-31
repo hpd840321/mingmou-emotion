@@ -20,6 +20,10 @@ export default defineConfig({
         target: 'ws://localhost:8090',
         ws: true,
       },
+      '/images': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
     },
   },
   test: {
