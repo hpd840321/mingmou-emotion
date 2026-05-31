@@ -166,6 +166,11 @@ public class FaceClusteringServiceV2 {
 
         for (FaceCluster cluster : clusters) {
             try {
+                // Skip if already has a student (prevents duplicate creation)
+                if (cluster.getStudentId() != null) {
+                    log.debug("Cluster {} already has student {}, skipping", cluster.getId(), cluster.getStudentId());
+                    continue;
+                }
                 Long classId = cluster.getClassId();
                 if (classId == null || classId == 0L) {
                     log.warn("Cluster {} has no classId, skipping", cluster.getId());

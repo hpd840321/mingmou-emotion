@@ -10,6 +10,7 @@ import com.school.emotion.repository.ClassImageRepository;
 import com.school.emotion.repository.EmotionRecordRepository;
 import com.school.emotion.repository.FaceRecordRepository;
 import com.school.emotion.repository.GradeRepository;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +60,19 @@ public class FaceProcessingPipeline {
         this.progressService = progressService;
         this.confidenceThreshold = confidenceThreshold;
         this.batchSize = batchSize;
+    }
+
+    @PostConstruct
+    public void resetStaleProcessingImages() {
+        List<com.school.emotion.model.entity.ClassImage> stuck = classImageRepository.findByStatus(ImageStatus.PROCESSING);
+        if (!stuck.isEmpty()) {
+            log.warn("Resetting {} stale PROCESSING images to PENDING", stuck.size());
+            for (var ci : stuck) {
+                ci.setStatus(ImageStatus.PENDING);
+                ci.setErrorMessage(null);
+            }
+            classImageRepository.saveAll(stuck);
+        }
     }
 
     /**

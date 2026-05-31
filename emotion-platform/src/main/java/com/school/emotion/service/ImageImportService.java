@@ -1,8 +1,10 @@
 package com.school.emotion.service;
 
 import com.school.emotion.model.entity.ClassImage;
+import com.school.emotion.model.entity.SchoolClass;
 import com.school.emotion.model.enums.ImageStatus;
 import com.school.emotion.repository.ClassImageRepository;
+import com.school.emotion.repository.SchoolClassRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -24,7 +26,7 @@ public class ImageImportService {
 
     private static final Logger log = LoggerFactory.getLogger(ImageImportService.class);
     private static final Pattern FILENAME_PATTERN =
-            Pattern.compile("(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})\\d{2}_.+\\.jpg$");
+            Pattern.compile(".*(\\d{4})(\\d{2})(\\d{2})_?(\\d{2})(\\d{2})(\\d{2}).*\\.jpg$");
 
     private static final Map<String, String> DIR_TO_PERIOD = new HashMap<>();
     static {
@@ -43,11 +45,14 @@ public class ImageImportService {
     }
 
     private final ClassImageRepository classImageRepository;
+    private final SchoolClassRepository schoolClassRepository;
     private final RedisTemplate<String, String> redisTemplate;
 
     public ImageImportService(ClassImageRepository classImageRepository,
+                               SchoolClassRepository schoolClassRepository,
                                RedisTemplate<String, String> redisTemplate) {
         this.classImageRepository = classImageRepository;
+        this.schoolClassRepository = schoolClassRepository;
         this.redisTemplate = redisTemplate;
     }
 
@@ -56,6 +61,24 @@ public class ImageImportService {
         if (!Files.isDirectory(dateDir)) {
             return new ImportReport(0, 0, 0, "Directory not found: " + dateDir);
         }
+
+        // Resolve school class from directory path: .../{school}/{class}/{date}
+        SchoolClass schoolClass = null;
+        Path classDir = dateDir.getParent();
+        if (classDir != null) {
+            String className = classDir.getFileName().toString();
+            var classes = schoolClassRepository.findAll();
+            for (SchoolClass c : classes) {
+                if (c.getName().equals(className)) {
+                    schoolClass = c;
+                    break;
+                }
+            }
+        }
+        if (schoolClass == null) {
+            return new ImportReport(0, 0, 0, "Cannot resolve class from path: " + dateDir);
+        }
+
         int total = 0, imported = 0, failed = 0;
         try (Stream<Path> paths = Files.walk(dateDir, 2)) {
             List<Path> images = paths.filter(p -> p.toString().endsWith(".jpg")).toList();
@@ -71,6 +94,7 @@ public class ImageImportService {
                     int h = Integer.parseInt(matcher.group(4)), min = Integer.parseInt(matcher.group(5));
                     OffsetDateTime captureTime = OffsetDateTime.of(LocalDate.of(y, m, d), LocalTime.of(h, min, 0), ZoneOffset.ofHours(8));
                     ClassImage ci = new ClassImage();
+                    ci.setClazz(schoolClass);
                     ci.setImageUrl(imgPath.toAbsolutePath().toString());
                     ci.setCaptureTime(captureTime);
                     ci.setPeriodLabel(periodKey);

@@ -27,10 +27,10 @@ public class DataDirectoryScanner {
     private static final Logger log = LoggerFactory.getLogger(DataDirectoryScanner.class);
 
     private static final Pattern FILENAME_PATTERN =
-            Pattern.compile("(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})\\d{2}_.+\\.jpg$");
+            Pattern.compile(".*(\\d{4})(\\d{2})(\\d{2})_?(\\d{2})(\\d{2})(\\d{2}).*\\.jpg$");
 
     private static final Pattern DATE_DIR_PATTERN =
-            Pattern.compile("(\\d{4})-(\\d{2})(\\d{2})");
+            Pattern.compile("(\\d{4})-(\\d{2})-?(\\d{2})");
 
     private static final Map<String, String> PERIOD_MAP = new HashMap<>();
     static {
