@@ -10,7 +10,7 @@ export interface AnnotateRequest {
   studentName: string; studentNo: string; classId: number
 }
 
-export function fetchClusters(classId: number, status = 'auto_annotated'): Promise<FaceClusterVO[]> {
+export function fetchClusters(classId: number, status = 'auto_annotated,renamed'): Promise<FaceClusterVO[]> {
   return client.get('/face-clusters', { params: { class_id: classId, status } }).then(r => r.data as FaceClusterVO[])
 }
 

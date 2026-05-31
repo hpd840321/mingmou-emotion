@@ -57,7 +57,8 @@ public class EmotionAnalysisResult {
                 }
             } else if (probs instanceof java.util.List) {
                 java.util.List<Object> rawList = (java.util.List<Object>) probs;
-                String[] EMOTION_KEYS = {"neutral", "happy", "sad", "surprise", "fear", "disgust", "angry", "contempt"};
+                // Engine output order: 0=angry, 1=contempt, 2=disgust, 3=fear, 4=happy, 5=neutral, 6=sad, 7=surprise
+                String[] EMOTION_KEYS = {"angry", "contempt", "disgust", "fear", "happy", "neutral", "sad", "surprise"};
                 parsed = new java.util.LinkedHashMap<>();
                 for (int i = 0; i < rawList.size() && i < EMOTION_KEYS.length; i++) {
                     if (rawList.get(i) instanceof Number) {

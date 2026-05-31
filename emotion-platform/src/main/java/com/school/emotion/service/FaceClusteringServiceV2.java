@@ -61,6 +61,11 @@ public class FaceClusteringServiceV2 {
         runClustering();
     }
 
+    @Scheduled(fixedDelay = 3600000, initialDelay = 60000)
+    public void scheduledAutoAnnotate() {
+        autoAnnotateClusters();
+    }
+
     @SuppressWarnings("unchecked")
     public ClusteringReport runClustering() {
         long start = System.currentTimeMillis();

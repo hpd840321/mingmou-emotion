@@ -40,6 +40,7 @@ public class EmotionStatisticsService {
     }
 
     @Scheduled(fixedDelay = 600000)
+    @Transactional
     public void scheduledAggregation() {
         log.info("Running scheduled emotion aggregation");
         aggregateByClassAndDate();

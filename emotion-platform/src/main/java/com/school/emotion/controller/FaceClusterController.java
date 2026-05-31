@@ -21,7 +21,7 @@ public class FaceClusterController {
     @GetMapping
     public ResponseEntity<?> listClusters(
             @RequestParam("class_id") Long classId,
-            @RequestParam(defaultValue = "pending") String status) {
+            @RequestParam(defaultValue = "auto_annotated,renamed,pending") String status) {
         return ResponseEntity.ok(Map.of("code", 0, "data", faceLibraryService.listPendingClusters(classId, status)));
     }
 

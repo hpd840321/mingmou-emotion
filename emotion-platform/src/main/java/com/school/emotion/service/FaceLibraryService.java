@@ -46,8 +46,10 @@ public class FaceLibraryService {
     }
 
     public List<FaceClusterVO> listPendingClusters(Long classId, String status) {
-        List<FaceCluster> clusters = clusterRepository
-                .findByClassIdAndStatusOrderBySampleCountDesc(classId, status);
+        String[] statuses = status.split(",");
+        List<FaceCluster> clusters = statuses.length == 1
+                ? clusterRepository.findByClassIdAndStatusOrderBySampleCountDesc(classId, status)
+                : clusterRepository.findByClassIdAndStatusInOrderBySampleCountDesc(classId, java.util.List.of(statuses));
         List<FaceClusterVO> result = new ArrayList<>();
         for (FaceCluster c : clusters) {
             FaceClusterVO vo = new FaceClusterVO();

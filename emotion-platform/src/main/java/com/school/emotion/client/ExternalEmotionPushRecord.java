@@ -1,17 +1,42 @@
 package com.school.emotion.client;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class ExternalEmotionPushRecord {
+    @JsonProperty("Id")
     private Long Id;
+
+    @JsonProperty("CameraCode")
     private String CameraCode;
+
+    @JsonProperty("student_code")
     private String student_code;
+
+    @JsonProperty("SmallPic")
     private String SmallPic;
+
+    @JsonProperty("CaptureTime")
     private String CaptureTime;
+
+    @JsonProperty("ImageUrl")
     private String ImageUrl;
+
+    @JsonProperty("Confidence")
     private String Confidence;
+
+    @JsonProperty("score")
     private Integer score;
+
+    @JsonProperty("color")
     private String color;
+
+    @JsonProperty("Emotion")
     private String Emotion;
+
+    @JsonProperty("GazeDirection")
     private String GazeDirection;
+
+    @JsonProperty("created_at")
     private String created_at;
 
     public Long getId() { return Id; }
