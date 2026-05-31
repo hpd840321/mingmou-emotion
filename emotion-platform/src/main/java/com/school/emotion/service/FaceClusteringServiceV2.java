@@ -133,7 +133,8 @@ public class FaceClusteringServiceV2 {
 
             FaceCluster fc = new FaceCluster();
             fc.setClusterKey(clusterKey);
-            fc.setClassId(0L);
+            // classId is not available from Qdrant points; leave null.
+            // Pipeline-created clusters should have classId set explicitly.
             fc.setFaceTokens(toJsonArray(faceIds));
             fc.setSampleCount(faceIds.size());
             fc.setFirstSeenAt(OffsetDateTime.now());
