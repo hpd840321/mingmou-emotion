@@ -15,6 +15,9 @@
             <span class="node-icon">{{ iconMap[data.type] }}</span>
             <span>{{ data.label }}</span>
             <span v-if="data.type === 'student'" class="node-no">{{ data.studentNo }}</span>
+            <span v-if="data.sampleImages && data.sampleImages.length > 0" class="node-thumbs">
+              <img v-for="(img, i) in data.sampleImages.slice(0, 3)" :key="i" :src="img" class="thumb-sm" />
+            </span>
           </span>
         </template>
       </el-tree>
@@ -85,6 +88,11 @@
 
           <el-tab-pane label="原始数据" name="raw">
             <el-table :data="rawEmotions" size="small" stripe max-height="500">
+              <el-table-column label="人脸" width="80">
+                <template #default="{ row }">
+                  <el-image v-if="row.croppedImageUrl" :src="row.croppedImageUrl" class="face-thumb" fit="cover" />
+                </template>
+              </el-table-column>
               <el-table-column label="时间" width="160">
                 <template #default="{ row }">{{ formatTime(row.captureTime) }}</template>
               </el-table-column>
@@ -121,7 +129,7 @@ import * as echarts from 'echarts'
 const router = useRouter()
 const treeData = ref<TreeNode[]>([])
 const treeProps = { children: 'children', label: 'label' }
-const iconMap: Record<string, string> = { grade: '📚', class: '📋', student: '👤' }
+const iconMap: Record<string, string> = { grade: '📚', class: '📋', student: '👤', face_group: '👥', face: '🖼️' }
 const emotionColors: Record<string, string> = {
   happy: '#22C55E', sad: '#F97316', angry: '#DC2626', surprise: '#F59E0B',
   fear: '#7C3AED', disgust: '#374151', neutral: '#64748B'
@@ -141,6 +149,10 @@ function onNodeClick(data: TreeNode) {
   if (data.type === 'student') {
     loadStudentEmotions(data)
     currentStudent.value = data
+  } else if (data.type === 'face_group') {
+    // For face groups, load emotions by the cluster's face records
+    currentStudent.value = null
+    rawEmotions.value = []
   } else {
     currentStudent.value = null
     rawEmotions.value = []
@@ -228,4 +240,7 @@ function emotionIcon(e: string) { return { happy:'😊', sad:'😢', angry:'😠
 .emotion-seg { height: 100%; transition: width 0.2s; }
 .loading { padding: var(--space-8); }
 .empty { text-align: center; padding: var(--space-8); color: var(--color-muted-fg); }
+.face-thumb { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; border: 1px solid var(--color-border); }
+.thumb-sm { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; margin-left: 2px; border: 1px solid #e5e7eb; vertical-align: middle; }
+.node-thumbs { display: inline-flex; align-items: center; margin-left: 6px; }
 </style>

@@ -1,10 +1,6 @@
 package com.school.emotion.controller;
 
-import com.school.emotion.model.entity.Grade;
-import com.school.emotion.model.entity.SchoolClass;
-import com.school.emotion.model.entity.Student;
-import com.school.emotion.model.entity.FaceRecord;
-import com.school.emotion.model.entity.EmotionRecord;
+import com.school.emotion.model.entity.*;
 import com.school.emotion.repository.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,20 +17,23 @@ public class SchoolTreeController {
     private final StudentRepository studentRepository;
     private final FaceRecordRepository faceRecordRepository;
     private final EmotionRecordRepository emotionRecordRepository;
+    private final FaceClusterRepository faceClusterRepository;
 
     public SchoolTreeController(GradeRepository gradeRepository,
                                 SchoolClassRepository classRepository,
                                 StudentRepository studentRepository,
                                 FaceRecordRepository faceRecordRepository,
-                                EmotionRecordRepository emotionRecordRepository) {
+                                EmotionRecordRepository emotionRecordRepository,
+                                FaceClusterRepository faceClusterRepository) {
         this.gradeRepository = gradeRepository;
         this.classRepository = classRepository;
         this.studentRepository = studentRepository;
         this.faceRecordRepository = faceRecordRepository;
         this.emotionRecordRepository = emotionRecordRepository;
+        this.faceClusterRepository = faceClusterRepository;
     }
 
-    /** 获取学校树结构: grades → classes → students */
+    /** 获取学校树结构: grades → classes → [students|face_groups] */
     @GetMapping
     public ResponseEntity<?> getTree() {
         List<Grade> grades = gradeRepository.findAll();
@@ -58,18 +57,77 @@ public class SchoolTreeController {
                 classNode.put("classId", c.getId());
 
                 List<Student> students = studentRepository.findByClazz_Id(c.getId());
-                List<Map<String, Object>> studentNodes = new ArrayList<>();
+                List<Map<String, Object>> childNodes = new ArrayList<>();
 
-                for (Student s : students) {
-                    Map<String, Object> studentNode = new HashMap<>();
-                    studentNode.put("id", "student-" + s.getId());
-                    studentNode.put("label", s.getName());
-                    studentNode.put("type", "student");
-                    studentNode.put("studentId", s.getId());
-                    studentNode.put("studentNo", s.getStudentNo());
-                    studentNodes.add(studentNode);
+                if (!students.isEmpty()) {
+                    for (Student s : students) {
+                        Map<String, Object> studentNode = new HashMap<>();
+                        studentNode.put("id", "student-" + s.getId());
+                        studentNode.put("label", s.getName());
+                        studentNode.put("type", "student");
+                        studentNode.put("studentId", s.getId());
+                        studentNode.put("studentNo", s.getStudentNo());
+
+                        // Add sample face images
+                        List<FaceRecord> faces = faceRecordRepository.findByStudentId(s.getId());
+                        List<String> sampleImages = faces.stream()
+                                .filter(f -> f.getCroppedImageUrl() != null)
+                                .limit(4)
+                                .map(FaceRecord::getCroppedImageUrl)
+                                .collect(Collectors.toList());
+                        studentNode.put("sampleImages", sampleImages);
+                        studentNode.put("faceCount", faces.size());
+                        childNodes.add(studentNode);
+                    }
+                } else {
+                    // Fallback: show face groups (clusters) when no students linked
+                    List<FaceCluster> clusters = faceClusterRepository
+                            .findByClassIdAndStatusOrderBySampleCountDesc(c.getId(), "auto_annotated");
+                    clusters.stream().limit(50).forEach(cl -> {
+                        Map<String, Object> groupNode = new HashMap<>();
+                        groupNode.put("id", "cluster-" + cl.getId());
+                        groupNode.put("label", "人物#" + cl.getId());
+                        groupNode.put("type", "face_group");
+                        groupNode.put("clusterId", cl.getId());
+                        groupNode.put("faceCount", cl.getSampleCount());
+
+                        String tokens = cl.getFaceTokens();
+                        if (tokens != null && !tokens.isEmpty()) {
+                            java.util.regex.Matcher matcher =
+                                    java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(tokens);
+                            List<String> samples = new ArrayList<>();
+                            while (matcher.find() && samples.size() < 4) {
+                                String libFaceId = matcher.group(1);
+                                faceRecordRepository.findByLibFaceId(libFaceId)
+                                        .filter(fr -> fr.getCroppedImageUrl() != null)
+                                        .ifPresent(fr -> samples.add(fr.getCroppedImageUrl()));
+                            }
+                            groupNode.put("sampleImages", samples);
+                        } else {
+                            groupNode.put("sampleImages", List.of());
+                        }
+                        childNodes.add(groupNode);
+                    });
+
+                    // Also add ungrouped face records as individual entries
+                    if (childNodes.isEmpty()) {
+                        List<FaceRecord> allFaces = faceRecordRepository.findAll();
+                        allFaces.stream().limit(100).forEach(fr -> {
+                            Map<String, Object> faceNode = new HashMap<>();
+                            faceNode.put("id", "face-" + fr.getId());
+                            faceNode.put("label", "人脸#" + fr.getId());
+                            faceNode.put("type", "face");
+                            faceNode.put("faceRecordId", fr.getId());
+                            faceNode.put("croppedImageUrl", fr.getCroppedImageUrl());
+                            faceNode.put("confidence", fr.getConfidence());
+                            if (fr.getCroppedImageUrl() != null) {
+                                faceNode.put("sampleImages", List.of(fr.getCroppedImageUrl()));
+                            }
+                            childNodes.add(faceNode);
+                        });
+                    }
                 }
-                classNode.put("children", studentNodes);
+                classNode.put("children", childNodes);
                 classNodes.add(classNode);
             }
             gradeNode.put("children", classNodes);
@@ -90,6 +148,8 @@ public class SchoolTreeController {
 
             Map<String, Object> record = new HashMap<>();
             record.put("faceRecordId", fr.getId());
+            record.put("croppedImageUrl", fr.getCroppedImageUrl());
+            record.put("imageUrl", fr.getClassImage() != null ? fr.getClassImage().getImageUrl() : null);
             record.put("captureTime", fr.getClassImage() != null ?
                     fr.getClassImage().getCaptureTime().toString() : null);
             record.put("periodLabel", fr.getClassImage() != null ?
