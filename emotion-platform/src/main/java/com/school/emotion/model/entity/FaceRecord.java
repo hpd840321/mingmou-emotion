@@ -49,10 +49,15 @@ public class FaceRecord {
     @Column(name = "lib_register_status", length = 20)
     private String libRegisterStatus = "pending";
 
+    @Column(name = "error_message", length = 500)
+    private String errorMessage;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
     public Long getId() { return id; }
+    public String getErrorMessage() { return errorMessage; }
+    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
     public void setId(Long id) { this.id = id; }
     public ClassImage getClassImage() { return classImage; }
     public void setClassImage(ClassImage classImage) { this.classImage = classImage; }

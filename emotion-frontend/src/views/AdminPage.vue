@@ -224,7 +224,7 @@ function connectWebSocket() {
             if (events.value.length > MAX_EVENTS) events.value.length = MAX_EVENTS
             // Update status counts from event
             if (event.counts) {
-              status.value = { ...status.value, ...event.counts, total: Object.values(event.counts).reduce((a: number, b: number) => a + b, 0) }
+              status.value = { ...status.value, ...event.counts, total: (Object.values(event.counts) as number[]).reduce((a, b) => a + b, 0) }
             }
             nextTick(() => {
               if (logContainer.value) logContainer.value.scrollTop = 0
