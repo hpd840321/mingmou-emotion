@@ -39,6 +39,7 @@ class FaceProcessingPipelineTest {
     @Mock private FaceRegistrationService registrationService;
     @Mock private PipelineProgressService progressService;
     @Mock private com.school.emotion.service.ai.GrpcFaceServiceClient grpcFaceClient;
+    @Mock private org.springframework.core.task.TaskExecutor pipelineExecutor;
 
     private FaceProcessingPipeline pipeline;
 
@@ -47,7 +48,7 @@ class FaceProcessingPipelineTest {
         pipeline = new FaceProcessingPipeline(
                 classImageRepository, faceRecordRepository, emotionRecordRepository,
                 gradeRepository, visionMindClient,
-                croppingService, registrationService, progressService, grpcFaceClient, 0.3f, 50);
+                croppingService, registrationService, progressService, grpcFaceClient, pipelineExecutor, 0.3f, 50);
     }
 
     @Test

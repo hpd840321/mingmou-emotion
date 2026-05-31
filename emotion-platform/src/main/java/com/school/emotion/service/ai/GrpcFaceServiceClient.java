@@ -32,10 +32,10 @@ public class GrpcFaceServiceClient implements DisposableBean {
     public static final long FEAT_POSE       = 0x40;
     public static final long FEAT_EMOTION    = 0x80;
 
-    // Standard features (detect + recognition + attribute + quality + pose + emotion)
-    // Note: intentionally excludes 0x04 (liveness) and 0x08 (mask)
-    // as those are not supported by all Analyze pipeline paths
-    public static final long STANDARD_FEATURES = 0x01 | 0x02 | 0x10 | 0x20 | 0x40 | 0x80;
+    // Standard features (detect + recognition + quality + emotion)
+    // Intentionally excludes 0x04 (liveness), 0x08 (mask), 0x10 (attribute/gender/age), 0x40 (pose)
+    // as those are not required by the business
+    public static final long STANDARD_FEATURES = 0x01 | 0x02 | 0x20 | 0x80;
 
     private final String faceHost;
     private final int facePort;

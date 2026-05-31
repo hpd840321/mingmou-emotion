@@ -15,9 +15,9 @@ public class AsyncConfig {
     @Bean("pipelineExecutor")
     public TaskExecutor pipelineExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(6);
-        executor.setQueueCapacity(120);
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(200);
         executor.setThreadNamePrefix("pipeline-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);

@@ -17,6 +17,7 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +40,7 @@ public class FaceProcessingPipeline {
     private final FaceRegistrationService registrationService;
     private final PipelineProgressService progressService;
     private final GrpcFaceServiceClient grpcFaceClient;
+    private final TaskExecutor pipelineExecutor;
 
     private final float confidenceThreshold;
     private final int batchSize;
@@ -53,6 +55,7 @@ public class FaceProcessingPipeline {
             FaceRegistrationService registrationService,
             PipelineProgressService progressService,
             GrpcFaceServiceClient grpcFaceClient,
+            TaskExecutor pipelineExecutor,
             @Value("${app.face.confidence-threshold:0.3}") float confidenceThreshold,
             @Value("${app.pipeline.batch-size:50}") int batchSize) {
         this.classImageRepository = classImageRepository;
@@ -64,6 +67,7 @@ public class FaceProcessingPipeline {
         this.registrationService = registrationService;
         this.progressService = progressService;
         this.grpcFaceClient = grpcFaceClient;
+        this.pipelineExecutor = pipelineExecutor;
         this.confidenceThreshold = confidenceThreshold;
         this.batchSize = batchSize;
     }
@@ -97,24 +101,41 @@ public class FaceProcessingPipeline {
         log.info("Phase 1: Face detection on {} pending images", pending.size());
 
         int detected = 0, noFace = 0, errors = 0;
-        for (int i = 0; i < pending.size(); i++) {
-            // Check if stop was requested
-            if (progressService.isStopRequested()) {
-                log.warn("Pipeline stop requested, terminating after {} images", i);
-                break;
-            }
-            ClassImage ci = pending.get(i);
+
+        // Submit pending images with limited concurrency to avoid overwhelming face_server
+        int maxConcurrent = 2;
+        java.util.concurrent.Semaphore concurrencyLimit = new java.util.concurrent.Semaphore(maxConcurrent);
+        java.util.concurrent.CompletionService<ProcessResult> completionService =
+                new java.util.concurrent.ExecutorCompletionService<>(pipelineExecutor);
+        int submitted = 0;
+        for (ClassImage ci : pending) {
+            if (progressService.isStopRequested()) break;
+            ClassImage capture = ci;
+            concurrencyLimit.acquireUninterruptibly();
+            completionService.submit(() -> {
+                try {
+                    return processImage(capture);
+                } finally {
+                    concurrencyLimit.release();
+                }
+            });
+            submitted++;
+        }
+
+        for (int i = 0; i < submitted; i++) {
             try {
-                ProcessResult result = processImage(ci);
+                ProcessResult result = completionService.take().get();
                 if (result.faceDetected) detected++;
                 else noFace++;
+            } catch (java.util.concurrent.ExecutionException e) {
+                // Exception was already handled inside processImage() (markFailed called)
+                // The future wrapping may add TransactionSystemException layer
+                errors++;
             } catch (Exception e) {
-                log.error("Failed to process image {}: {}", ci.getId(), e.getMessage());
-                markFailed(ci, e.getMessage());
                 errors++;
             }
-            if (i > 0 && i % 50 == 0) {
-                log.info("  Progress: {}/{} (detected={}, noFace={}, errors={})", i, pending.size(), detected, noFace, errors);
+            if (i > 0 && (i + 1) % 50 == 0) {
+                log.info("  Progress: {}/{} (detected={}, noFace={}, errors={})", i + 1, pending.size(), detected, noFace, errors);
             }
         }
 
