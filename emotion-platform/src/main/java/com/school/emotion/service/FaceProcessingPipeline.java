@@ -120,6 +120,15 @@ public class FaceProcessingPipeline {
 
     @Transactional
     public ProcessResult processImage(ClassImage ci) {
+        // Re-read from DB to check if still PENDING (prevents concurrent processing)
+        ClassImage fresh = classImageRepository.findById(ci.getId()).orElse(null);
+        if (fresh == null || fresh.getStatus() != ImageStatus.PENDING) {
+            log.debug("Image {} status is {}, skipping (already processed by another consumer)", ci.getId(),
+                    fresh != null ? fresh.getStatus() : "deleted");
+            return new ProcessResult(false, false);
+        }
+        ci = fresh;
+
         // Mark as PROCESSING and broadcast progress
         ImageStatus oldStatus = ci.getStatus();
         ci.setStatus(ImageStatus.PROCESSING);
