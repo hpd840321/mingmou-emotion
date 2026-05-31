@@ -42,6 +42,8 @@ visionmind:
   face:
     detect:
       path: /v1/face/detect
+      tile-width: 320
+      tile-height: 320
     attribute:
       path: /v1/face/attribute
     search:
