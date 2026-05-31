@@ -10,21 +10,22 @@ import java.nio.file.Path;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    private final String imagesDir;
+    private final String primaryImagesDir;
+    private final String fallbackImagesDir;
 
     public WebConfig(@Value("${app.image.cropped-dir:./images/cropped}") String croppedDir) {
-        // croppedDir is relative to JVM cwd (project root). The real images dir is under emotion-platform/
+        // Primary: resolve from JVM cwd (project root)
         Path abs = Path.of(croppedDir).toAbsolutePath().normalize();
-        // If the resolved path doesn't exist, try prepending emotion-platform/
-        if (!abs.toFile().exists()) {
-            abs = Path.of("emotion-platform", croppedDir).toAbsolutePath().normalize();
-        }
-        this.imagesDir = abs.getParent().toUri().toString();
+        this.primaryImagesDir = abs.getParent().toUri().toString();
+
+        // Fallback: emotion-platform/images/ for older cropped files
+        Path fallback = Path.of("emotion-platform", croppedDir).toAbsolutePath().normalize();
+        this.fallbackImagesDir = fallback.getParent().toUri().toString();
     }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/images/**")
-                .addResourceLocations(imagesDir);
+                .addResourceLocations(primaryImagesDir, fallbackImagesDir);
     }
 }
