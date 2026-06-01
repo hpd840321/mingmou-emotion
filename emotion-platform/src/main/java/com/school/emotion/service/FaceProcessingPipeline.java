@@ -238,32 +238,36 @@ public class FaceProcessingPipeline {
                     registrationService.registerFaceToLibrary(fr, Path.of(cropResult.path()),
                             schoolId, ci.getClazz().getId());
 
-                    // Emotion from REST /v1/face/emotion (dedicated endpoint for cropped faces)
+                    // Emotion via VisionMindClient (uses configured RestTemplate with timeouts)
                     try {
                         byte[] cropBytes = java.nio.file.Files.readAllBytes(Path.of(cropResult.path()));
-                        String b64 = java.util.Base64.getEncoder().encodeToString(cropBytes);
-                        org.springframework.http.HttpHeaders hdrs = new org.springframework.http.HttpHeaders();
-                        hdrs.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-                        var emoResponse = new org.springframework.web.client.RestTemplate().exchange(
-                            "http://localhost:8080/v1/face/emotion",
-                            org.springframework.http.HttpMethod.POST,
-                            new org.springframework.http.HttpEntity<>(java.util.Map.of("image_base64", b64), hdrs),
-                            java.util.Map.class);
-                        java.util.Map<String, Object> emoBody = emoResponse.getBody();
-                        if (emoBody != null && Integer.valueOf(0).equals(emoBody.get("code"))
-                                && emoBody.get("data") instanceof java.util.Map) {
-                            java.util.Map<String, Object> emoData = (java.util.Map<String, Object>) emoBody.get("data");
-                            if (emoData != null && !emoData.isEmpty() && emoData.get("label") != null) {
-                                EmotionRecord er = new EmotionRecord();
-                                er.setFaceRecord(fr);
-                                er.setDominantEmotion((String) emoData.get("label"));
-                                emotionRecordRepository.save(er);
-                                fr.setStatus(FaceStatus.IDENTIFIED);
-                                emotionCount++;
+                        EmotionAnalysisResult emotionResult = visionMindClient.analyzeEmotion(cropBytes);
+                        if (emotionResult != null && emotionResult.getDominantEmotion() != null) {
+                            EmotionRecord er = new EmotionRecord();
+                            er.setFaceRecord(fr);
+                            er.setDominantEmotion(emotionResult.getDominantEmotion());
+                            er.setDominantConfidence(emotionResult.getDominantConfidence());
+
+                            // Save full 8-dim emotion probability vector
+                            java.util.Map<String, Float> probs = emotionResult.getEmotions();
+                            if (probs != null) {
+                                er.setEmotionHappy(probs.get("happy"));
+                                er.setEmotionSad(probs.get("sad"));
+                                er.setEmotionAngry(probs.get("angry"));
+                                er.setEmotionSurprise(probs.get("surprise"));
+                                er.setEmotionFear(probs.get("fear"));
+                                er.setEmotionDisgust(probs.get("disgust"));
+                                er.setEmotionNeutral(probs.get("neutral"));
                             }
+
+                            emotionRecordRepository.save(er);
+                            fr.setStatus(FaceStatus.IDENTIFIED);
+                            emotionCount++;
+                            log.debug("Emotion for face {}: {} (conf={})", fr.getId(),
+                                    er.getDominantEmotion(), er.getDominantConfidence());
                         }
                     } catch (Exception e) {
-                        log.debug("Emotion API skipped for face {}: {}", fr.getId(), e.getMessage());
+                        log.debug("Emotion analysis skipped for face {}: {}", fr.getId(), e.getMessage());
                     }
                 }
             } catch (Exception e) {
