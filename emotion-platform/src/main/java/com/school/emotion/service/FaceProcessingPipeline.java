@@ -189,6 +189,7 @@ public class FaceProcessingPipeline {
 
         // Convert gRPC FaceResult list to internal format, filter by confidence
         List<FaceDetectionResult.Face> validFaces = new java.util.ArrayList<>();
+        List<FaceResult> validGrpcFaces = new java.util.ArrayList<>();  // parallel list for emotion data
         for (FaceResult grpcFace : grpcResponse.getFacesList()) {
             float conf = grpcFace.getToken().getConfidence();
             if (conf < confidenceThreshold) continue;
@@ -203,6 +204,7 @@ public class FaceProcessingPipeline {
             face.setConfidence(conf);
             face.setQuality(grpcFace.getQuality());
             validFaces.add(face);
+            validGrpcFaces.add(grpcFace);
         }
 
         if (validFaces.isEmpty()) {
@@ -216,7 +218,9 @@ public class FaceProcessingPipeline {
         // Process each valid face: create FaceRecord, crop, register to library, analyze emotion
         int faceCount = 0;
         int emotionCount = 0;
-        for (FaceDetectionResult.Face face : validFaces) {
+        for (int faceIdx = 0; faceIdx < validFaces.size(); faceIdx++) {
+            FaceDetectionResult.Face face = validFaces.get(faceIdx);
+            FaceResult grpcFace = validGrpcFaces.get(faceIdx);  // parallel list
             FaceDetectionResult.BBox bbox = face.getBbox();
             FaceRecord fr = new FaceRecord();
             fr.setClassImage(ci);
@@ -250,35 +254,41 @@ public class FaceProcessingPipeline {
                     registrationService.registerFaceToLibrary(fr, Path.of(cropResult.path()),
                             schoolId, ci.getClazz().getId());
 
-                    // Per-face emotion analysis on cropped image
-                    try {
-                        byte[] cropBytes = java.nio.file.Files.readAllBytes(Path.of(cropResult.path()));
-                        EmotionAnalysisResult emotionResult = visionMindClient.analyzeAttribute(cropBytes);
-                        if (emotionResult != null && emotionResult.getDominantEmotion() != null) {
-                            EmotionRecord er = new EmotionRecord();
-                            er.setFaceRecord(fr);
-                            er.setDominantEmotion(emotionResult.getDominantEmotion());
-                            er.setDominantConfidence(emotionResult.getDominantConfidence());
+                    // Emotion from gRPC Analyze response (directly from face_server)
+                    // This is more reliable than calling REST on cropped image
+                    if (grpcFace.hasEmotion()) {
+                        try {
+                            com.craftlabs.visionmind.core.grpc.proto.FaceEmotion ge = grpcFace.getEmotion();
+                            String label = ge.getLabel();
+                            if (label != null && !label.isEmpty()) {
+                                EmotionRecord er = new EmotionRecord();
+                                er.setFaceRecord(fr);
+                                er.setDominantEmotion(label);
+                                er.setDominantConfidence((float) ge.getProbabilitiesList().stream()
+                                        .mapToDouble(d -> (double) d).max().orElse(0));
 
-                            Map<String, Float> probs = emotionResult.getEmotions();
-                            if (probs != null) {
-                                er.setEmotionHappy(probs.get("happy"));
-                                er.setEmotionSad(probs.get("sad"));
-                                er.setEmotionAngry(probs.get("angry"));
-                                er.setEmotionSurprise(probs.get("surprise"));
-                                er.setEmotionFear(probs.get("fear"));
-                                er.setEmotionDisgust(probs.get("disgust"));
-                                er.setEmotionNeutral(probs.get("neutral"));
+                                // Set per-dimension probabilities from gRPC 8-class array
+                                // Engine order: 0=angry, 1=contempt, 2=disgust, 3=fear, 4=happy, 5=neutral, 6=sad, 7=surprise
+                                List<Float> probs = ge.getProbabilitiesList();
+                                if (probs.size() >= 8) {
+                                    er.setEmotionAngry((float) probs.get(0));
+                                    // contempt(1) skipped — not stored
+                                    er.setEmotionDisgust((float) probs.get(2));
+                                    er.setEmotionFear((float) probs.get(3));
+                                    er.setEmotionHappy((float) probs.get(4));
+                                    er.setEmotionNeutral((float) probs.get(5));
+                                    er.setEmotionSad((float) probs.get(6));
+                                    er.setEmotionSurprise((float) probs.get(7));
+                                }
+
+                                emotionRecordRepository.save(er);
+                                fr.setStatus(FaceStatus.IDENTIFIED);
+                                emotionCount++;
+                                log.info("Emotion record created for face {}: {} (from gRPC)", fr.getId(), label);
                             }
-
-                            emotionRecordRepository.save(er);
-                            fr.setStatus(FaceStatus.IDENTIFIED);
-                            emotionCount++;
-                            log.info("Emotion record created for face {}: {} (confidence={})",
-                                    fr.getId(), er.getDominantEmotion(), fr.getConfidence());
+                        } catch (Exception e) {
+                            log.warn("Failed to process gRPC emotion for face {}: {}", fr.getId(), e.getMessage());
                         }
-                    } catch (Exception e) {
-                        log.warn("Emotion analysis failed for face {}: {}", fr.getId(), e.getMessage());
                     }
                 }
             } catch (Exception e) {
