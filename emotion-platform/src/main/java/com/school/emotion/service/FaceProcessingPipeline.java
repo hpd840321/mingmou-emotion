@@ -250,44 +250,20 @@ public class FaceProcessingPipeline {
                             new org.springframework.http.HttpEntity<>(java.util.Map.of("image_base64", b64), hdrs),
                             java.util.Map.class);
                         java.util.Map<String, Object> emoBody = emoResponse.getBody();
-                        if (emoBody != null && Integer.valueOf(0).equals(emoBody.get("code"))) {
+                        if (emoBody != null && Integer.valueOf(0).equals(emoBody.get("code"))
+                                && emoBody.get("data") instanceof java.util.Map) {
                             java.util.Map<String, Object> emoData = (java.util.Map<String, Object>) emoBody.get("data");
-                            if (emoData != null && emoData.get("label") != null) {
+                            if (emoData != null && !emoData.isEmpty() && emoData.get("label") != null) {
                                 EmotionRecord er = new EmotionRecord();
                                 er.setFaceRecord(fr);
                                 er.setDominantEmotion((String) emoData.get("label"));
-                                Number rawProb = (Number) emoData.get("emotion");
-                                java.util.List<Number> probs = (java.util.List<Number>) emoData.get("probabilities");
-                                if (probs != null && rawProb != null) {
-                                    double sum = 0;
-                                    double[] expVals = new double[probs.size()];
-                                    for (int pi = 0; pi < probs.size(); pi++) {
-                                        expVals[pi] = Math.exp(probs.get(pi).doubleValue());
-                                        sum += expVals[pi];
-                                    }
-                                    int idx = rawProb.intValue();
-                                    if (idx >= 0 && idx < expVals.length && sum > 0) {
-                                        er.setDominantConfidence((float) (expVals[idx] / sum));
-                                        // Engine order: 0=angry, 2=disgust, 3=fear, 4=happy, 5=neutral, 6=sad, 7=surprise
-                                        if (probs.size() >= 8) {
-                                            er.setEmotionAngry((float) (expVals[0] / sum));
-                                            er.setEmotionDisgust((float) (expVals[2] / sum));
-                                            er.setEmotionFear((float) (expVals[3] / sum));
-                                            er.setEmotionHappy((float) (expVals[4] / sum));
-                                            er.setEmotionNeutral((float) (expVals[5] / sum));
-                                            er.setEmotionSad((float) (expVals[6] / sum));
-                                            er.setEmotionSurprise((float) (expVals[7] / sum));
-                                        }
-                                    }
-                                }
                                 emotionRecordRepository.save(er);
                                 fr.setStatus(FaceStatus.IDENTIFIED);
                                 emotionCount++;
-                                log.info("Emotion record created for face {}: {} (from emotion API)", fr.getId(), er.getDominantEmotion());
                             }
                         }
                     } catch (Exception e) {
-                        log.warn("Emotion API failed for face {}: {}", fr.getId(), e.getMessage());
+                        log.debug("Emotion API skipped for face {}: {}", fr.getId(), e.getMessage());
                     }
                 }
             } catch (Exception e) {
