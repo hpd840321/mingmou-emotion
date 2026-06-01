@@ -63,7 +63,7 @@ public class GrpcFaceServiceClient implements DisposableBean {
                 .setEnabledFeatures(enabledFeatures)
                 .build();
 
-        return stub.withDeadlineAfter(60, TimeUnit.SECONDS).analyze(request);
+        return stub.withDeadlineAfter(180, TimeUnit.SECONDS).analyze(request);
     }
 
     /**

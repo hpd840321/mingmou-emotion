@@ -102,40 +102,24 @@ public class FaceProcessingPipeline {
 
         int detected = 0, noFace = 0, errors = 0;
 
-        // Submit pending images with limited concurrency to avoid overwhelming face_server
-        int maxConcurrent = 2;
-        java.util.concurrent.Semaphore concurrencyLimit = new java.util.concurrent.Semaphore(maxConcurrent);
-        java.util.concurrent.CompletionService<ProcessResult> completionService =
-                new java.util.concurrent.ExecutorCompletionService<>(pipelineExecutor);
-        int submitted = 0;
+        // Sequential processing to avoid overwhelming face_server gRPC
         for (ClassImage ci : pending) {
-            if (progressService.isStopRequested()) break;
-            ClassImage capture = ci;
-            concurrencyLimit.acquireUninterruptibly();
-            completionService.submit(() -> {
-                try {
-                    return processImage(capture);
-                } finally {
-                    concurrencyLimit.release();
-                }
-            });
-            submitted++;
-        }
-
-        for (int i = 0; i < submitted; i++) {
+            if (progressService.isStopRequested()) {
+                log.warn("Pipeline stop requested, terminating after processing images so far");
+                break;
+            }
             try {
-                ProcessResult result = completionService.take().get();
+                ProcessResult result = processImage(ci);
                 if (result.faceDetected) detected++;
                 else noFace++;
-            } catch (java.util.concurrent.ExecutionException e) {
-                // Exception was already handled inside processImage() (markFailed called)
-                // The future wrapping may add TransactionSystemException layer
-                errors++;
             } catch (Exception e) {
+                log.error("Failed to process image {}: {}", ci.getId(), e.getMessage());
+                markFailed(ci, e.getMessage());
                 errors++;
             }
-            if (i > 0 && (i + 1) % 50 == 0) {
-                log.info("  Progress: {}/{} (detected={}, noFace={}, errors={})", i + 1, pending.size(), detected, noFace, errors);
+            int done = detected + noFace + errors;
+            if (done > 0 && done % 50 == 0) {
+                log.info("  Progress: {}/{} (detected={}, noFace={}, errors={})", done, pending.size(), detected, noFace, errors);
             }
         }
 
@@ -254,41 +238,56 @@ public class FaceProcessingPipeline {
                     registrationService.registerFaceToLibrary(fr, Path.of(cropResult.path()),
                             schoolId, ci.getClazz().getId());
 
-                    // Emotion from gRPC Analyze response (directly from face_server)
-                    // This is more reliable than calling REST on cropped image
-                    if (grpcFace.hasEmotion()) {
-                        try {
-                            com.craftlabs.visionmind.core.grpc.proto.FaceEmotion ge = grpcFace.getEmotion();
-                            String label = ge.getLabel();
-                            if (label != null && !label.isEmpty()) {
+                    // Emotion from REST /v1/face/emotion (dedicated endpoint for cropped faces)
+                    try {
+                        byte[] cropBytes = java.nio.file.Files.readAllBytes(Path.of(cropResult.path()));
+                        String b64 = java.util.Base64.getEncoder().encodeToString(cropBytes);
+                        org.springframework.http.HttpHeaders hdrs = new org.springframework.http.HttpHeaders();
+                        hdrs.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+                        var emoResponse = new org.springframework.web.client.RestTemplate().exchange(
+                            "http://localhost:8080/v1/face/emotion",
+                            org.springframework.http.HttpMethod.POST,
+                            new org.springframework.http.HttpEntity<>(java.util.Map.of("image_base64", b64), hdrs),
+                            java.util.Map.class);
+                        java.util.Map<String, Object> emoBody = emoResponse.getBody();
+                        if (emoBody != null && Integer.valueOf(0).equals(emoBody.get("code"))) {
+                            java.util.Map<String, Object> emoData = (java.util.Map<String, Object>) emoBody.get("data");
+                            if (emoData != null && emoData.get("label") != null) {
                                 EmotionRecord er = new EmotionRecord();
                                 er.setFaceRecord(fr);
-                                er.setDominantEmotion(label);
-                                er.setDominantConfidence((float) ge.getProbabilitiesList().stream()
-                                        .mapToDouble(d -> (double) d).max().orElse(0));
-
-                                // Set per-dimension probabilities from gRPC 8-class array
-                                // Engine order: 0=angry, 1=contempt, 2=disgust, 3=fear, 4=happy, 5=neutral, 6=sad, 7=surprise
-                                List<Float> probs = ge.getProbabilitiesList();
-                                if (probs.size() >= 8) {
-                                    er.setEmotionAngry((float) probs.get(0));
-                                    // contempt(1) skipped — not stored
-                                    er.setEmotionDisgust((float) probs.get(2));
-                                    er.setEmotionFear((float) probs.get(3));
-                                    er.setEmotionHappy((float) probs.get(4));
-                                    er.setEmotionNeutral((float) probs.get(5));
-                                    er.setEmotionSad((float) probs.get(6));
-                                    er.setEmotionSurprise((float) probs.get(7));
+                                er.setDominantEmotion((String) emoData.get("label"));
+                                Number rawProb = (Number) emoData.get("emotion");
+                                java.util.List<Number> probs = (java.util.List<Number>) emoData.get("probabilities");
+                                if (probs != null && rawProb != null) {
+                                    double sum = 0;
+                                    double[] expVals = new double[probs.size()];
+                                    for (int pi = 0; pi < probs.size(); pi++) {
+                                        expVals[pi] = Math.exp(probs.get(pi).doubleValue());
+                                        sum += expVals[pi];
+                                    }
+                                    int idx = rawProb.intValue();
+                                    if (idx >= 0 && idx < expVals.length && sum > 0) {
+                                        er.setDominantConfidence((float) (expVals[idx] / sum));
+                                        // Engine order: 0=angry, 2=disgust, 3=fear, 4=happy, 5=neutral, 6=sad, 7=surprise
+                                        if (probs.size() >= 8) {
+                                            er.setEmotionAngry((float) (expVals[0] / sum));
+                                            er.setEmotionDisgust((float) (expVals[2] / sum));
+                                            er.setEmotionFear((float) (expVals[3] / sum));
+                                            er.setEmotionHappy((float) (expVals[4] / sum));
+                                            er.setEmotionNeutral((float) (expVals[5] / sum));
+                                            er.setEmotionSad((float) (expVals[6] / sum));
+                                            er.setEmotionSurprise((float) (expVals[7] / sum));
+                                        }
+                                    }
                                 }
-
                                 emotionRecordRepository.save(er);
                                 fr.setStatus(FaceStatus.IDENTIFIED);
                                 emotionCount++;
-                                log.info("Emotion record created for face {}: {} (from gRPC)", fr.getId(), label);
+                                log.info("Emotion record created for face {}: {} (from emotion API)", fr.getId(), er.getDominantEmotion());
                             }
-                        } catch (Exception e) {
-                            log.warn("Failed to process gRPC emotion for face {}: {}", fr.getId(), e.getMessage());
                         }
+                    } catch (Exception e) {
+                        log.warn("Emotion API failed for face {}: {}", fr.getId(), e.getMessage());
                     }
                 }
             } catch (Exception e) {
