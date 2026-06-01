@@ -8,7 +8,7 @@ Usage:
   python3 process_faces_step1.py --start-id 5000     # 从指定ID开始
 """
 
-import os, sys, json, time, base64, io, uuid
+import os, sys, json, time, base64, io, uuid, subprocess
 from pathlib import Path
 from datetime import datetime
 import argparse
@@ -184,12 +184,34 @@ def main():
 
         # Face detection via gRPC Analyze
         face_count = 0
-        try:
-            req = FaceAnalysisRequest(image_data=image_data, enabled_features=DETECT_FEATURES)
-            resp = stub.Analyze(req, timeout=180)
-        except Exception as e:
-            log.warning(f"  [{img_count}] Analyze failed for #{ci_id} {rel_name}: {e}")
-            failed_ids.add(ci_id)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                req = FaceAnalysisRequest(image_data=image_data, enabled_features=DETECT_FEATURES)
+                resp = stub.Analyze(req, timeout=180)
+                break  # Success, exit retry loop
+            except Exception as e:
+                err_str = str(e)
+                log.warning(f"  [{img_count}] Analyze failed for #{ci_id} (attempt {attempt+1}): {err_str[:80]}")
+                if attempt < max_retries - 1:
+                    # Restart face_server and retry
+                    log.info("  Restarting face_server container...")
+                    import subprocess
+                    subprocess.run(['docker', 'restart', 'docker-face-1-1'],
+                                   capture_output=True, timeout=30)
+                    import time
+                    time.sleep(5)
+                    # Re-create channel and stub
+                    channel = grpc.insecure_channel(FACE_SERVER,
+                        options=[('grpc.max_send_message_length', 50*1024*1024),
+                                 ('grpc.max_receive_message_length', 50*1024*1024)])
+                    stub = FaceServiceStub(channel)
+                    log.info("  face_server restarted, retrying...")
+                else:
+                    failed_ids.add(ci_id)
+                    break
+        else:
+            # All retries exhausted
             continue
 
         if not resp.success or len(resp.faces) == 0:
