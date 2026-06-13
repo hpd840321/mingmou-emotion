@@ -3,6 +3,7 @@ package com.school.emotion.controller;
 import com.school.emotion.model.entity.Student;
 import com.school.emotion.repository.*;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ public class StudentController {
     }
 
     @GetMapping("/{id}/emotion-timeline")
+    @Transactional(readOnly = true)
     public ResponseEntity<?> timeline(
             @PathVariable Long id,
             @RequestParam(required = false) String date,
@@ -81,10 +83,10 @@ public class StudentController {
         data.put("tags", List.of());
         data.put("kpis", List.of(
                 Map.of("label", "情绪健康度", "value", Math.round(Math.max(0, healthScore)),
-                        "unit", "%", "change", null, "changeDirection", "flat",
+                        "unit", "%", "change", 0, "changeDirection", "flat",
                         "status", healthScore > 60 ? "good" : "warning"),
                 Map.of("label", "课堂参与度", "value", Math.round(avgEngagement),
-                        "unit", "%", "change", null, "changeDirection", "flat",
+                        "unit", "%", "change", 0, "changeDirection", "flat",
                         "status", avgEngagement > 60 ? "good" : "warning")
         ));
         data.put("trendData", aggs.stream().map(agg -> {

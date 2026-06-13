@@ -3,7 +3,7 @@ package com.school.emotion.model.entity;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "system_user")
+@Table(name = "sys_user")
 public class SystemUser {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

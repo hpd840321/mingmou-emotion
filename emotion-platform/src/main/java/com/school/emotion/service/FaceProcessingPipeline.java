@@ -241,7 +241,7 @@ public class FaceProcessingPipeline {
                     // Emotion via VisionMindClient (uses configured RestTemplate with timeouts)
                     try {
                         byte[] cropBytes = java.nio.file.Files.readAllBytes(Path.of(cropResult.path()));
-                        EmotionAnalysisResult emotionResult = visionMindClient.analyzeEmotion(cropBytes);
+                        EmotionAnalysisResult emotionResult = visionMindClient.analyzeAttribute(cropBytes);
                         if (emotionResult != null && emotionResult.getDominantEmotion() != null) {
                             EmotionRecord er = new EmotionRecord();
                             er.setFaceRecord(fr);
