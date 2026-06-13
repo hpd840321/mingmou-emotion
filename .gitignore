@@ -2,14 +2,28 @@
 data/
 data/annotated/
 
+# 图片裁剪产物 + 处理输出
+**/images/cropped/
+processed_faces/
+*.zip
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
 # 构建产物
 target/
 *.jar
 *.class
+face_results.json
 
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# Vite 临时文件
+vite.config.ts.timestamp-*.mjs
 
 # 临时/备份
 *.bak
