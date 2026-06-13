@@ -5,7 +5,7 @@ spring:
   application:
     name: emotion-platform
   datasource:
-    url: jdbc:mysql://192.168.3.12:3307/emotion_platform?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
+    url: jdbc:mysql://craftsupport.cn:3307/emotion_platform?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
     username: root
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -33,6 +33,15 @@ app:
     cropped-dir: emotion-platform/images/cropped
   scan:
     interval-ms: 300000
+  face:
+    confidence-threshold: 0.5
+    min-face-width: 50
+  clustering:
+    qdrant-url: http://localhost:6333
+    similarity-threshold: 0.85
+    min-cluster-size: 5
+    min-confidence: 0.5
+    min-face-width: 50
   external-push:
     enabled: false
     base-url: http://ylcs.htface.cn:33895

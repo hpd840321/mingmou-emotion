@@ -11,15 +11,20 @@ import java.nio.file.Path;
 public class WebConfig implements WebMvcConfigurer {
 
     private final String imagesDir;
+    private final String dataDir;
 
-    public WebConfig(@Value("${app.image.cropped-dir:./images/cropped}") String croppedDir) {
-        // Resolve to absolute path and get parent (images/) to serve /images/** URLs
+    public WebConfig(
+            @Value("${app.image.cropped-dir:./images/cropped}") String croppedDir,
+            @Value("${app.data.dir:../data}") String dataDir) {
         this.imagesDir = Path.of(croppedDir).toAbsolutePath().normalize().getParent().toUri().toString();
+        this.dataDir = Path.of(dataDir).toAbsolutePath().normalize().toUri().toString();
     }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/images/**")
                 .addResourceLocations(imagesDir);
+        registry.addResourceHandler("/data/**")
+                .addResourceLocations(dataDir);
     }
 }
