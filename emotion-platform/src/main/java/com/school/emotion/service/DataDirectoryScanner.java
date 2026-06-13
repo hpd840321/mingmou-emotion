@@ -101,21 +101,20 @@ public class DataDirectoryScanner {
         try (Stream<Path> schools = Files.list(dataRoot)) {
             List<Path> schoolDirs = schools.filter(Files::isDirectory).toList();
 
+            // Use seed data: grade(id=1) + class(id=1)
+            Grade grade = gradeRepository.findById(1L)
+                    .orElseThrow(() -> new IllegalStateException("Seed grade(id=1) not found"));
+            SchoolClass schoolClass = classRepository.findById(1L)
+                    .orElseThrow(() -> new IllegalStateException("Seed class(id=1) not found"));
+
             for (Path schoolDir : schoolDirs) {
                 String schoolName = schoolDir.getFileName().toString();
                 log.info("Scanning school: {}", schoolName);
-
-                // 1. Create/get grade record for this school
-                Grade grade = getOrCreateGrade(schoolName);
 
                 try (Stream<Path> classes = Files.list(schoolDir)) {
                     List<Path> classDirs = classes.filter(Files::isDirectory).toList();
 
                     for (Path classDir : classDirs) {
-                        String className = classDir.getFileName().toString();
-
-                        // 2. Create/get class record
-                        SchoolClass schoolClass = getOrCreateClass(grade, className);
 
                         // 3. Process date directories
                         ScanResult result = processClassDir(classDir, schoolClass);
