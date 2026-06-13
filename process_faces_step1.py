@@ -196,10 +196,8 @@ def main():
                 if attempt < max_retries - 1:
                     # Restart face_server and retry
                     log.info("  Restarting face_server container...")
-                    import subprocess
                     subprocess.run(['docker', 'restart', 'docker-face-1-1'],
                                    capture_output=True, timeout=30)
-                    import time
                     time.sleep(5)
                     # Re-create channel and stub
                     channel = grpc.insecure_channel(FACE_SERVER,

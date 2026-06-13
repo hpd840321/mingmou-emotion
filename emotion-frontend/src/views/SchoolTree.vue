@@ -109,7 +109,7 @@
               </el-table-column>
               <el-table-column label="课时" width="80" prop="periodLabel" />
               <el-table-column label="主导表情" width="100">
-                <template #default="{ row }">{{ emotionIcon(row.dominantEmotion) }} {{ row.dominantEmotion }}</template>
+                <template #default="{ row }">{{ emotionIcon(row.dominantEmotion) }} {{ emotionNameCN(row.dominantEmotion) }}</template>
               </el-table-column>
               <el-table-column label="置信度" width="80" prop="dominantConfidence">
                 <template #default="{ row }">{{ (row.dominantConfidence * 100).toFixed(0) }}%</template>
@@ -119,7 +119,7 @@
                   <div class="emotion-bar">
                     <div v-for="(v, k) in row.emotions" :key="k" class="emotion-seg"
                       :style="{ width: ((v || 0) * 100) + '%', background: emotionColors[k] }"
-                      :title="k + ': ' + ((v || 0) * 100).toFixed(0) + '%'" />
+                      :title="emotionNameCN(k) + ': ' + ((v || 0) * 100).toFixed(0) + '%'" />
                   </div>
                 </template>
               </el-table-column>
@@ -136,15 +136,13 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchSchoolTree, fetchStudentRawEmotions, fetchFaceEmotion, type TreeNode, type RawEmotionRecord } from '@/api/schoolTree'
 import * as echarts from 'echarts'
+import { EMOTION_ICONS, emotionNameCN, EMOTION_COLORS } from '@/constants/emotion'
 
 const router = useRouter()
 const treeData = ref<TreeNode[]>([])
 const treeProps = { children: 'children', label: 'label' }
 const iconMap: Record<string, string> = { grade: '📚', class: '📋', student: '👤', face_group: '👥', face: '🖼️' }
-const emotionColors: Record<string, string> = {
-  happy: '#22C55E', sad: '#F97316', angry: '#DC2626', surprise: '#F59E0B',
-  fear: '#7C3AED', disgust: '#374151', neutral: '#64748B'
-}
+const emotionColors = EMOTION_COLORS
 
 const selectedNode = ref<TreeNode | null>(null)
 const currentStudent = ref<TreeNode | null>(null)
@@ -189,14 +187,23 @@ async function loadStudentEmotions(stu: TreeNode) {
   finally { loadingEmotions.value = false }
 }
 
+const CN_TO_EN: Record<string, string> = {
+  '中性': 'neutral', '开心': 'happy', '伤心': 'sad', '生气': 'angry',
+  '惊讶': 'surprise', '恐惧': 'fear', '厌恶': 'disgust', '蔑视': 'contempt',
+}
+function normalizeLabel(label: string): string {
+  return CN_TO_EN[label] || label
+}
+
 const emotionStats = computed(() => {
   const counts: Record<string, number> = {}
   rawEmotions.value.forEach(r => {
-    counts[r.dominantEmotion] = (counts[r.dominantEmotion] || 0) + 1
+    const key = normalizeLabel(r.dominantEmotion)
+    counts[key] = (counts[key] || 0) + 1
   })
   const total = rawEmotions.value.length || 1
   return Object.entries(counts).map(([label, count]) => ({
-    label, pct: count / total, color: emotionColors[label] || '#999'
+    label: emotionNameCN(label), pct: count / total, color: emotionColors[label] || '#999'
   }))
 })
 
@@ -222,12 +229,12 @@ function formatTime(ts: string) {
   const d = new Date(ts)
   return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
-function emotionIcon(e: string) { return { happy:'😊', sad:'😢', angry:'😠', surprise:'😲', fear:'😨', disgust:'😖', neutral:'😐' }[e] || '' }
+function emotionIcon(e: string) { return EMOTION_ICONS[e] || '' }
 </script>
 
 <style scoped>
-.school-tree { display: flex; height: calc(100vh - var(--topbar-height) - var(--breadcrumb-height) - 48px); gap: var(--space-4); }
-.tree-panel { width: 280px; flex-shrink: 0; background: var(--color-card); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow-y: auto; padding: var(--space-3); }
+.school-tree { display: flex; height: calc(100vh - var(--topbar-height) - var(--breadcrumb-height) - 48px); gap: var(--space-4); margin-left: calc(var(--space-8) * -1); margin-right: calc(var(--space-8) * -1); padding: 0 var(--space-8); }
+.tree-panel { width: 520px; flex-shrink: 0; background: var(--color-card); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow-y: auto; padding: var(--space-3); }
 .tree-header { margin-bottom: var(--space-3); }
 .tree-header h3 { font-size: var(--text-base); font-weight: 600; }
 .tree-node { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
@@ -261,6 +268,6 @@ function emotionIcon(e: string) { return { happy:'😊', sad:'😢', angry:'😠
 .loading { padding: var(--space-8); }
 .empty { text-align: center; padding: var(--space-8); color: var(--color-muted-fg); }
 .face-thumb { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; border: 1px solid var(--color-border); }
-.thumb-sm { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; margin-left: 2px; border: 1px solid #e5e7eb; vertical-align: middle; }
-.node-thumbs { display: inline-flex; align-items: center; margin-left: 6px; }
+.thumb-sm { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; margin-left: 4px; border: 1px solid #e5e7eb; vertical-align: middle; }
+.node-thumbs { display: inline-flex; align-items: center; margin-left: 8px; flex-shrink: 0; }
 </style>

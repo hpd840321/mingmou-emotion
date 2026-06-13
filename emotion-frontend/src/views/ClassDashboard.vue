@@ -22,7 +22,7 @@
           <el-table-column prop="studentNo" label="学号" width="100" />
           <el-table-column label="主导表情" width="120">
             <template #default="{ row }">
-              <span>{{ emotionIcon(row.dominantEmotion) }} {{ row.dominantEmotion }}</span>
+              <span>{{ emotionIcon(row.dominantEmotion) }} {{ emotionNameCN(row.dominantEmotion) }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="happy" label="快乐%" width="80" />
@@ -59,6 +59,7 @@ import { useRoute } from 'vue-router'
 import TimeNavigator from '@/components/common/TimeNavigator.vue'
 import KpiCardRow from '@/components/common/KpiCardRow.vue'
 import * as echarts from 'echarts'
+import { EMOTION_ICONS, emotionNameCN } from '@/constants/emotion'
 
 const route = useRoute()
 const store = useClassStore()
@@ -98,7 +99,7 @@ watch(() => store.dashboardData, async () => {
   const timeline = store.dashboardData.timelineData || []
   chart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['快乐', '悲伤', '愤怒', '中性'] },
+    legend: { data: ['快乐', '悲伤'] },
     grid: { left: 50, right: 30 },
     xAxis: { type: 'category', data: timeline.map((t: any) => t.time || '') },
     yAxis: { type: 'value', max: 100 },
@@ -109,7 +110,7 @@ watch(() => store.dashboardData, async () => {
   })
 })
 
-function emotionIcon(e: string) { return { happy:'😊', sad:'😢', angry:'😠', surprise:'😲', fear:'😨', disgust:'😖', neutral:'😐' }[e] || '' }
+function emotionIcon(e: string) { return EMOTION_ICONS[e] || '' }
 </script>
 
 <style scoped>
