@@ -1,6 +1,6 @@
 # Backend — emotion-platform
 
-**Stack:** Java 17 + Spring Boot 3.2.5 + MySQL + JPA + gRPC
+**Stack:** Java 17 + Spring Boot 3.2.5 + PostgreSQL + JPA + gRPC
 
 ## STRUCTURE
 
