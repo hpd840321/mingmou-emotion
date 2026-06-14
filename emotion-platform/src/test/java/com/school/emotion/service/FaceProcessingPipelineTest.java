@@ -38,6 +38,7 @@ class FaceProcessingPipelineTest {
     @Mock private FaceCroppingService croppingService;
     @Mock private FaceRegistrationService registrationService;
     @Mock private PipelineProgressService progressService;
+    @Mock private EmotionStateMappingService emotionStateMappingService;
     @Mock private org.springframework.core.task.TaskExecutor pipelineExecutor;
 
     private FaceProcessingPipeline pipeline;
@@ -58,7 +59,8 @@ class FaceProcessingPipelineTest {
         pipeline = new FaceProcessingPipeline(
                 classImageRepository, faceRecordRepository, emotionRecordRepository,
                 gradeRepository, visionMindClient,
-                croppingService, registrationService, progressService, pipelineExecutor, 0.3f, 50);
+                croppingService, registrationService, progressService,
+                emotionStateMappingService, pipelineExecutor, 0.3f, 50);
     }
 
     @Test
@@ -81,7 +83,7 @@ class FaceProcessingPipelineTest {
 
         when(visionMindClient.detectFaces(any())).thenThrow(new RuntimeException("API unavailable"));
 
-        var result = pipeline.processImage(stagePendingCi(1L, tempFile.toAbsolutePath().toString()));
+        var result = pipeline.processImage(classImageRepository.findById(1L).get());
         assertFalse(result.faceDetected());
 
         Files.deleteIfExists(tempFile);

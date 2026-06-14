@@ -62,6 +62,7 @@ public class FaceRegistrationService {
                 new HttpEntity<>(body, headers),
                 Map.class);
 
+            @SuppressWarnings("unchecked")
             Map<String, Object> respBody = response.getBody();
             int code = (int) respBody.getOrDefault("code", 1);
 
