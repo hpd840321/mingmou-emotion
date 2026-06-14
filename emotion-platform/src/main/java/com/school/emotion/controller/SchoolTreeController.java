@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Comparator;
 
 @RestController
 @RequestMapping("/api/v1/school-tree")
@@ -207,6 +208,8 @@ public class SchoolTreeController {
             record.put("emotions", emotions);
             records.add(record);
         }
+        // 按拍摄时间增序排列
+        records.sort(Comparator.comparing(r -> (String) r.getOrDefault("captureTime", "")));
         return ResponseEntity.ok(Map.of("code", 0, "data", records));
     }
 
