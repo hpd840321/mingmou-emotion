@@ -38,3 +38,42 @@ export function fetchAlertRules(): Promise<AlertRuleData[]> {
 export function createAlertRule(rule: AlertRuleData): Promise<AlertRuleData> {
   return client.post('/alert-rules', rule).then(r => r.data as AlertRuleData)
 }
+
+export interface CameraData {
+  id?: number; name: string; ipAddress: string; type: string
+  installPosition: string; status: string; resolution: string
+  classroomId?: number; classroomName?: string
+}
+
+export function fetchCameras(): Promise<CameraData[]> {
+  return client.get('/admin/cameras').then(r => r.data as CameraData[])
+}
+
+export function createCamera(data: CameraData): Promise<CameraData> {
+  return client.post('/admin/cameras', data).then(r => r.data as CameraData)
+}
+
+export function updateCamera(id: number, data: CameraData): Promise<CameraData> {
+  return client.put(`/admin/cameras/${id}`, data).then(r => r.data as CameraData)
+}
+
+export function deleteCamera(id: number): Promise<void> {
+  return client.delete(`/admin/cameras/${id}`)
+}
+
+export function triggerSnapshot(id: number): Promise<void> {
+  return client.post(`/admin/cameras/${id}/snapshot`)
+}
+
+export function fetchCameraPhotos(id: number): Promise<any[]> {
+  return client.get(`/admin/cameras/${id}/photos`).then(r => r.data as any[])
+}
+
+export interface EngineInfo {
+  name: string; host: string; port: number
+  status: 'UP' | 'DOWN'; latencyMs: number; uptime: string
+}
+
+export function fetchEngines(): Promise<EngineInfo[]> {
+  return client.get('/admin/engines').then(r => r.data as EngineInfo[])
+}

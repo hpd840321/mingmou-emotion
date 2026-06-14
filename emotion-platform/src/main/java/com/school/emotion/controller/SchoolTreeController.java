@@ -3,6 +3,7 @@ package com.school.emotion.controller;
 import com.school.emotion.model.entity.*;
 import com.school.emotion.repository.*;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -77,16 +78,43 @@ public class SchoolTreeController {
                         studentNode.put("studentId", s.getId());
                         studentNode.put("studentNo", s.getStudentNo());
 
-                        // Add sample face images
                         List<FaceRecord> faces = faceRecordRepository.findByStudentId(s.getId());
                         List<String> sampleImages = faces.stream()
                                 .filter(f -> f.getCroppedImageUrl() != null)
                                 .limit(4)
-                                .map(f -> toImageUrl(f.getCroppedImageUrl()))
+                                .map(f -> "/img/" + f.getId())
                                 .collect(Collectors.toList());
                         studentNode.put("sampleImages", sampleImages);
                         studentNode.put("faceCount", faces.size());
                         childNodes.add(studentNode);
+                    }
+
+                    // 添加未关联学生的人脸（student_id IS NULL）分组展示
+                    List<FaceRecord> unlinkedFaces = faceRecordRepository.findByClassImage_Clazz_IdAndStudentIdIsNull(c.getId());
+                    if (!unlinkedFaces.isEmpty()) {
+                        Map<String, List<FaceRecord>> grouped = unlinkedFaces.stream()
+                                .filter(fr -> fr.getClassImage() != null)
+                                .collect(Collectors.groupingBy(fr -> {
+                                    var ci = fr.getClassImage();
+                                    String d = ci.getCaptureTime() != null ? ci.getCaptureTime().toLocalDate().toString() : "unknown";
+                                    String p = ci.getPeriodLabel() != null ? ci.getPeriodLabel() : "other";
+                                    return d + "_" + p;
+                                }));
+                        for (Map.Entry<String, List<FaceRecord>> entry : grouped.entrySet()) {
+                            List<FaceRecord> groupFaces = entry.getValue();
+                            Map<String, Object> groupNode = new HashMap<>();
+                            groupNode.put("id", "unlinked_" + entry.getKey());
+                            groupNode.put("label", entry.getKey() + "(" + groupFaces.size() + "人)");
+                            groupNode.put("type", "face_group");
+                            groupNode.put("faceCount", groupFaces.size());
+                            List<String> samples = groupFaces.stream()
+                                    .filter(fr -> fr.getCroppedImageUrl() != null)
+                                    .limit(4)
+                                    .map(fr -> "/img/" + fr.getId())
+                                    .collect(Collectors.toList());
+                            groupNode.put("sampleImages", samples);
+                            childNodes.add(groupNode);
+                        }
                     }
                 } else {
                     // Fallback: show face groups (clusters) when no students linked
@@ -109,7 +137,7 @@ public class SchoolTreeController {
                                 String libFaceId = matcher.group(1);
                                 faceRecordRepository.findByLibFaceId(libFaceId)
                                         .filter(fr -> fr.getCroppedImageUrl() != null)
-                                        .ifPresent(fr -> samples.add(toImageUrl(fr.getCroppedImageUrl())));
+                                        .ifPresent(fr -> samples.add("/img/" + fr.getId()));
                             }
                             groupNode.put("sampleImages", samples);
                         } else {
@@ -127,10 +155,10 @@ public class SchoolTreeController {
                             faceNode.put("label", "人脸#" + fr.getId());
                             faceNode.put("type", "face");
                             faceNode.put("faceRecordId", fr.getId());
-                            faceNode.put("croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()));
+                            faceNode.put("croppedImageUrl", "/img/" + fr.getId());
                             faceNode.put("confidence", fr.getConfidence());
                             if (fr.getCroppedImageUrl() != null) {
-                                faceNode.put("sampleImages", List.of(toImageUrl(fr.getCroppedImageUrl())));
+                                faceNode.put("sampleImages", List.of("/img/" + fr.getId()));
                             }
                             childNodes.add(faceNode);
                         });
@@ -158,7 +186,7 @@ public class SchoolTreeController {
 
             Map<String, Object> record = new HashMap<>();
             record.put("faceRecordId", fr.getId());
-            record.put("croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()));
+            record.put("croppedImageUrl", "/img/" + fr.getId());
             record.put("imageUrl", fr.getClassImage() != null ? toImageUrl(fr.getClassImage().getImageUrl()) : null);
             record.put("captureTime", fr.getClassImage() != null ?
                     fr.getClassImage().getCaptureTime().toString() : null);
@@ -168,15 +196,15 @@ public class SchoolTreeController {
             record.put("confidence", fr.getConfidence());
             record.put("dominantEmotion", er.getDominantEmotion());
             record.put("dominantConfidence", er.getDominantConfidence());
-            record.put("emotions", Map.of(
-                "happy", er.getEmotionHappy(),
-                "sad", er.getEmotionSad(),
-                "angry", er.getEmotionAngry(),
-                "surprise", er.getEmotionSurprise(),
-                "fear", er.getEmotionFear(),
-                "disgust", er.getEmotionDisgust(),
-                "neutral", er.getEmotionNeutral()
-            ));
+            Map<String, Object> emotions = new LinkedHashMap<>();
+            emotions.put("happy", er.getEmotionHappy());
+            emotions.put("sad", er.getEmotionSad());
+            emotions.put("angry", er.getEmotionAngry());
+            emotions.put("surprise", er.getEmotionSurprise());
+            emotions.put("fear", er.getEmotionFear());
+            emotions.put("disgust", er.getEmotionDisgust());
+            emotions.put("neutral", er.getEmotionNeutral());
+            record.put("emotions", emotions);
             records.add(record);
         }
         return ResponseEntity.ok(Map.of("code", 0, "data", records));
@@ -198,7 +226,7 @@ public class SchoolTreeController {
             }
             return ResponseEntity.ok(Map.of("code", 0, "data", List.of(Map.of(
                 "faceRecordId", faceRecordId,
-                "croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()),
+                "croppedImageUrl", "/img/" + fr.getId(),
                 "imageUrl", fr.getClassImage() != null ? toImageUrl(fr.getClassImage().getImageUrl()) : null,
                 "captureTime", fr.getClassImage() != null ? fr.getClassImage().getCaptureTime().toString() : null,
                 "periodLabel", fr.getClassImage() != null ? fr.getClassImage().getPeriodLabel() : null,
@@ -218,7 +246,7 @@ public class SchoolTreeController {
 
         Map<String, Object> record = new HashMap<>();
         record.put("faceRecordId", fr.getId());
-        record.put("croppedImageUrl", toImageUrl(fr.getCroppedImageUrl()));
+        record.put("croppedImageUrl", "/img/" + fr.getId());
         record.put("imageUrl", fr.getClassImage() != null ? toImageUrl(fr.getClassImage().getImageUrl()) : null);
         record.put("captureTime", fr.getClassImage() != null ? fr.getClassImage().getCaptureTime().toString() : null);
         record.put("periodLabel", fr.getClassImage() != null ? fr.getClassImage().getPeriodLabel() : null);
@@ -228,5 +256,36 @@ public class SchoolTreeController {
         record.put("dominantConfidence", er.getDominantConfidence());
         record.put("emotions", emotions);
         return ResponseEntity.ok(Map.of("code", 0, "data", List.of(record)));
+    }
+
+    /** 通过 face_record_id 提供裁剪图（已认证，用于 API 调用） */
+    @GetMapping("/face/{faceRecordId}/image")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> getFaceImageApi(@PathVariable Long faceRecordId) {
+        return serveFaceImage(faceRecordId);
+    }
+
+    private ResponseEntity<?> serveFaceImage(Long faceRecordId) {
+        var optFr = faceRecordRepository.findById(faceRecordId);
+        if (optFr.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        String cropUrl = optFr.get().getCroppedImageUrl();
+        if (cropUrl == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            java.nio.file.Path imgPath = java.nio.file.Path.of(cropUrl);
+            if (!java.nio.file.Files.exists(imgPath)) {
+                // 尝试从 /images/cropped/... 相对路径解析
+                String relative = cropUrl.replace("/images/cropped/", "");
+                imgPath = java.nio.file.Path.of(
+                    System.getProperty("user.dir"), "images", "cropped", relative);
+            }
+            byte[] bytes = java.nio.file.Files.readAllBytes(imgPath);
+            return ResponseEntity.ok().contentType(MediaType.IMAGE_JPEG).body(bytes);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 }

@@ -29,6 +29,18 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    path: '/class/:classId/replay',
+    name: 'ClassroomReplay',
+    component: () => import('@/views/ClassroomReplay.vue'),
+    props: true,
+  },
+  {
+    path: '/class/:classId/schedule',
+    name: 'Schedule',
+    component: () => import('@/views/SchedulePage.vue'),
+    props: true,
+  },
+  {
     path: '/school-tree',
     name: 'SchoolTree',
     component: () => import('@/views/SchoolTree.vue'),
@@ -55,6 +67,24 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/pipeline',
     name: 'PipelineMonitor',
     component: () => import('@/views/PipelineMonitor.vue'),
+    meta: { roles: ['admin'] },
+  },
+  {
+    path: '/student-base',
+    name: 'StudentBase',
+    component: () => import('@/views/StudentBasePage.vue'),
+    meta: { roles: ['admin', 'school_manager', 'grade_leader'] },
+  },
+  {
+    path: '/admin/cameras',
+    name: 'CameraManage',
+    component: () => import('@/views/CameraManagePage.vue'),
+    meta: { roles: ['admin'] },
+  },
+  {
+    path: '/admin/engines',
+    name: 'EngineManage',
+    component: () => import('@/views/EngineManagePage.vue'),
     meta: { roles: ['admin'] },
   },
   { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('@/views/NotFound.vue') },

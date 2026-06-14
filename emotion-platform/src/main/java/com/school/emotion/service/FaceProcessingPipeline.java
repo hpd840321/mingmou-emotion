@@ -36,6 +36,7 @@ public class FaceProcessingPipeline {
     private final FaceCroppingService croppingService;
     private final FaceRegistrationService registrationService;
     private final PipelineProgressService progressService;
+    private final EmotionStateMappingService emotionStateMappingService;
     private final TaskExecutor pipelineExecutor;
 
     private final float confidenceThreshold;
@@ -50,6 +51,7 @@ public class FaceProcessingPipeline {
             FaceCroppingService croppingService,
             FaceRegistrationService registrationService,
             PipelineProgressService progressService,
+            EmotionStateMappingService emotionStateMappingService,
             TaskExecutor pipelineExecutor,
             @Value("${app.face.confidence-threshold:0.3}") float confidenceThreshold,
             @Value("${app.pipeline.batch-size:50}") int batchSize) {
@@ -61,6 +63,7 @@ public class FaceProcessingPipeline {
         this.croppingService = croppingService;
         this.registrationService = registrationService;
         this.progressService = progressService;
+        this.emotionStateMappingService = emotionStateMappingService;
         this.pipelineExecutor = pipelineExecutor;
         this.confidenceThreshold = confidenceThreshold;
         this.batchSize = batchSize;
@@ -233,6 +236,13 @@ public class FaceProcessingPipeline {
                                 er.setEmotionFear(probs.get("fear"));
                                 er.setEmotionDisgust(probs.get("disgust"));
                                 er.setEmotionNeutral(probs.get("neutral"));
+                            }
+
+                            if (probs != null && !probs.isEmpty()) {
+                                EmotionStateMappingService.EmotionState state = emotionStateMappingService
+                                    .mapFromProbabilities(probs);
+                                er.setDominantState(state.name());
+                                er.setEmotionalCohesion(probs.getOrDefault(emotionResult.getDominantEmotion(), 0.0f));
                             }
 
                             emotionRecordRepository.save(er);

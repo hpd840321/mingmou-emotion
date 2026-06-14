@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
 """
-明眸·校园学生状态感知平台 — 数据初始化管线脚本
+明眸·校园学生状态感知平台 — 数据初始化管线
 从 data/ 目录读取全景课堂照片，通过 face_server gRPC 进行：
-  1. 人脸检测 (gRPC Analyze → face_server:50053)
+  1. 人脸检测 + 512维特征提取 (gRPC Analyze, enabled_features=0xB3)
   2. 人脸裁剪 (本地 Pillow)
-  3. 情绪识别 (gRPC Analyze)
-  4. 人脸注册到 VisionMind 人脸库
-  5. 1:N 人脸搜索匹配（同一人跨图片/时段自动聚类）
-  6. 写入 PostgreSQL (class_image + face_record + emotion_record + student_id 关联)
+  3. 情绪识别
+  4. 基于特征余弦相似度的 1:N 人员匹配（阈值 0.55）
+  5. 空间位置辅助聚类（同 period 内 bbox 中心距 < 200px）
+  6. 保存裁剪图到 /images/cropped/
+  7. 写入 PostgreSQL (class_image + face_record + emotion_record + person 关联)
+  8. 更新 class_image 计数器字段
 
 用法:
-  python3 init_data_pipeline.py                    # 全量处理（检测+注册+匹配）
+  python3 init_data_pipeline.py                    # 全量处理
   python3 init_data_pipeline.py --max-images 100   # 仅处理前100张
   python3 init_data_pipeline.py --resume           # 断点续传
   python3 init_data_pipeline.py --start-id 500     # 从指定索引开始
-  python3 init_data_pipeline.py --dry-run          # 干跑，只打印不写入
-  python3 init_data_pipeline.py --match-only       # 仅对已存在 face_record 做匹配（不重新检测）
+  python3 init_data_pipeline.py --dry-run          # 干跑
 """
 
-import os, sys, json, time, base64, re, requests
+import os, sys, json, time, base64, re, struct, math
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import argparse
 import logging
 
+import numpy as np
 import grpc
 from PIL import Image
 import psycopg2
@@ -42,7 +44,6 @@ log = logging.getLogger('init_pipeline')
 #  配置
 # ============================================================
 
-VM_API = os.environ.get('VM_API', 'http://localhost:8080')
 GRPC_HOST = os.environ.get('GRPC_HOST', 'localhost:50053')
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_PORT = int(os.environ.get('DB_PORT', 5432))
@@ -52,108 +53,148 @@ DB_PASS = os.environ.get('DB_PASS', 'emotion')
 
 DATA_ROOT = Path('/media/zebra/data/官渡一中初一班-0526/data')
 CHECKPOINT_FILE = '/tmp/init_pipeline_checkpoint.json'
-PERSON_REGISTRY_FILE = '/tmp/init_pipeline_persons.json'
+PERSONS_FILE = '/tmp/pipeline_persons.json'
 
-# Detection config
 CONFIDENCE_THRESHOLD = 0.3
 CROP_MARGIN = 0.30
 GRPC_TIMEOUT = 180
-FACE_SEARCH_THRESHOLD = 0.6   # VisionMind 1:N 搜索阈值
-TOP_K = 1                     # 搜索返回 top-1 即可
-
-# Batch config
 BATCH_SIZE = 50
-CROP_OUTPUT_DIR = Path('/media/zebra/data/官渡一中初一班-0526/emotion-platform/images/cropped')
+
+# 人脸匹配阈值
+FEATURE_MATCH_THRESHOLD = 0.55      # 特征余弦相似度阈值
+SPATIAL_DISTANCE_THRESHOLD = 200     # 同 period bbox 中心距阈值(px)
+SAME_PERIOD_MATCH_BOOST = 0.05       # 同 period 额外加分
+
+CROP_OUTPUT_ROOT = Path('/media/zebra/data/官渡一中初一班-0526/emotion-platform/images')
 
 # ============================================================
-#  VisionMind REST API 交互
+#  人脸匹配器（增量式维护人员库）
 # ============================================================
 
-def vm_register_face(person_id, image_bytes, extra_json='{}'):
-    """注册人脸到 VisionMind 人脸库。person_id 如 'person_1'"""
-    b64 = base64.b64encode(image_bytes).decode()
-    try:
-        r = requests.post(f'{VM_API}/v1/facedb/register', json={
-            'id': person_id,
-            'name': person_id,
-            'extra': extra_json,
-            'image': b64,
-            'image_base64': b64,
-        }, timeout=30)
-        if r.status_code == 409:
-            log.warning('  Person %s already registered, re-registering...', person_id)
-            # Re-register to update face image
-            requests.post(f'{VM_API}/v1/facedb/register', json={
-                'id': person_id, 'name': person_id, 'extra': extra_json,
-                'image': b64, 'image_base64': b64,
-                'action': 'update',
-            }, timeout=30)
-        return r.ok
-    except Exception as e:
-        log.warning('  Register failed for %s: %s', person_id, e)
-        return False
-
-def vm_search_face(image_bytes, threshold=FACE_SEARCH_THRESHOLD, top_k=TOP_K):
-    """1:N 搜索人脸，返回 [(person_id, similarity), ...] 或空列表"""
-    b64 = base64.b64encode(image_bytes).decode()
-    try:
-        r = requests.post(f'{VM_API}/v1/face/search', json={
-            'image': b64,
-            'image_base64': b64,
-            'top_k': top_k,
-            'threshold': threshold,
-        }, timeout=30)
-        if not r.ok:
-            return []
-        data = r.json()
-        results = data.get('data', {}).get('results', [])
-        return [(res['id'], res.get('similarity', 0)) for res in results]
-    except Exception as e:
-        log.warning('  Search failed: %s', e)
-        return []
-
-# ============================================================
-#  人物注册表管理（持久化 person_id → student_id 映射）
-# ============================================================
-
-def load_person_registry():
-    """加载人物注册表。结构：
-    {
-        "next_person_id": 5,
-        "persons": {
-            "person_1": {"student_id": null, "face_count": 150, "avg_similarity": 0.85},
-            "person_2": {"student_id": 1, "face_count": 120, "avg_similarity": 0.82},
-        }
-    }
+class FaceMatcher:
+    """基于512维特征向量 + 空间位置的增量式人脸匹配器。
+    为每个 person 维护座位历史，在 match() 中使用空间距离辅助决策。
     """
-    try:
-        with open(PERSON_REGISTRY_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {'next_person_id': 1, 'persons': {}}
 
-def save_person_registry(registry):
-    with open(PERSON_REGISTRY_FILE, 'w') as f:
-        json.dump(registry, f, indent=2)
+    def __init__(self, registry_path=PERSONS_FILE):
+        self.registry_path = registry_path
+        self.persons = {}
+        self.next_pid = 1
+        self._load()
 
-def get_or_create_person(registry, matched_id=None):
-    """获取或创建人员ID。如果 matched_id 提供则使用已有 person_id。"""
-    if matched_id:
-        # matched_id 可能是 'person_1' 格式或是任意字符串
-        if matched_id.startswith('person_'):
-            registry['persons'].setdefault(matched_id, {'student_id': None, 'face_count': 0, 'avg_similarity': 0.0})
-            return matched_id
-    pid = f'person_{registry["next_person_id"]}'
-    registry['persons'][pid] = {'student_id': None, 'face_count': 0, 'avg_similarity': 0.0}
-    registry['next_person_id'] += 1
-    return pid
+    def _load(self):
+        try:
+            with open(self.registry_path) as f:
+                data = json.load(f)
+            self.persons = data.get('persons', {})
+            self.next_pid = data.get('next_pid', 1)
+            # 兼容旧格式：给没有 seats 的 person 初始化空列表
+            for p in self.persons.values():
+                p.setdefault('seats', [])
+            log.info("  Loaded %d persons from registry, next_pid=%s", len(self.persons), self.next_pid)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
-def update_person_stats(registry, person_id, similarity):
-    p = registry['persons'][person_id]
-    old_total = p['face_count']
-    new_total = old_total + 1
-    p['avg_similarity'] = (p['avg_similarity'] * old_total + similarity) / new_total if old_total > 0 else similarity
-    p['face_count'] = new_total
+    def save(self):
+        with open(self.registry_path, 'w') as f:
+            json.dump({'persons': self.persons, 'next_pid': self.next_pid}, f, indent=2)
+
+    def _normalize(self, vec):
+        n = np.linalg.norm(vec)
+        return vec / n if n > 1e-10 else vec
+
+    def record_seat(self, person_id, bbox_center, period=None):
+        """记录一个人脸的座位位置"""
+        entry = self.persons.get(person_id)
+        if not entry or not bbox_center:
+            return
+        seats = entry.setdefault('seats', [])
+        seats.append([bbox_center[0], bbox_center[1], period])
+        if len(seats) > 100:
+            seats.pop(0)
+
+    def _rebuild_feature_matrix(self):
+        """重建归一化特征矩阵（persons 更新后调用）"""
+        pids = list(self.persons.keys())
+        if not pids:
+            self._feature_pids = []
+            self._feature_matrix = np.empty((0, 512), dtype=np.float32)
+            return
+        matrix = np.array([self.persons[pid]['avg_feature'] for pid in pids], dtype=np.float32)
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms[norms < 1e-10] = 1
+        self._feature_matrix = matrix / norms
+        self._feature_pids = pids
+
+    def match(self, feature_vec, bbox_center=None, period=None):
+        """匹配人脸: 返回 (person_id, score)
+        - feature_vec: 512-dim float32 numpy array
+        - bbox_center: (cx, cy) 座位位置 → 用于空间加分/扣分
+        - period: 当前节次标签 → 同节次内空间匹配加分更多
+        """
+        if feature_vec is None or len(self.persons) == 0:
+            return None, 0.0
+
+        # 重建矩阵（懒加载 + 增量更新）
+        if not hasattr(self, '_feature_pids') or len(self._feature_pids) != len(self.persons):
+            self._rebuild_feature_matrix()
+
+        query_n = self._normalize(feature_vec)
+
+        # 向量化特征匹配 (8414 × 512 dot → 8414 scores)
+        sims = np.dot(self._feature_matrix, query_n)
+        best_idx = int(np.argmax(sims))
+        best_sim = float(sims[best_idx])
+        best_pid = self._feature_pids[best_idx]
+
+        # 空间加分/扣分（只在最佳候选中做，不遍历所有）
+        if bbox_center:
+            entry = self.persons.get(best_pid)
+            seats = entry.get('seats', []) if entry else []
+            if seats:
+                min_dist = min(
+                    math.hypot(bbox_center[0] - sx, bbox_center[1] - sy)
+                    for sx, sy, _ in seats
+                )
+                if period:
+                    period_dists = [
+                        math.hypot(bbox_center[0] - sx, bbox_center[1] - sy)
+                        for sx, sy, p in seats if p == period
+                    ]
+                    period_dist = min(period_dists) if period_dists else min_dist
+                else:
+                    period_dist = min_dist
+
+                if min_dist < SPATIAL_DISTANCE_THRESHOLD:
+                    best_sim += 0.08
+                    if period_dist < 100:
+                        best_sim += 0.04
+                elif min_dist > SPATIAL_DISTANCE_THRESHOLD * 3:
+                    best_sim -= 0.10
+
+        if best_sim >= FEATURE_MATCH_THRESHOLD:
+            return best_pid, best_sim
+        return None, best_sim
+
+    def register_new(self, feature_vec, person_id=None):
+        if person_id is None:
+            person_id = f'person_{self.next_pid}'
+            self.next_pid += 1
+        self.persons[person_id] = {
+            'avg_feature': feature_vec.tolist() if isinstance(feature_vec, np.ndarray) else list(feature_vec),
+            'face_count': 1,
+            'student_id': None,
+            'seats': [],
+        }
+        return person_id
+
+    def update_person(self, person_id, feature_vec):
+        entry = self.persons[person_id]
+        n = entry['face_count']
+        old_avg = np.array(entry['avg_feature'], dtype=np.float32)
+        new_vec = np.array(feature_vec, dtype=np.float32) if not isinstance(feature_vec, np.ndarray) else feature_vec
+        entry['avg_feature'] = ((old_avg * n) + new_vec / (n + 1)).tolist()
+        entry['face_count'] = n + 1
 
 # ============================================================
 #  数据库
@@ -164,56 +205,41 @@ def db_connect():
                             password=DB_PASS, database=DB_NAME)
 
 def ensure_seed_data(cur):
-    """Ensure seed grade(1) and class(1) exist."""
     cur.execute("INSERT INTO grade (id, name, sort_order) VALUES (1, '初一', 1) ON CONFLICT (id) DO NOTHING")
     cur.execute("""INSERT INTO class (id, grade_id, name, sort_order)
                    VALUES (1, 1, '初一班', 1) ON CONFLICT (id) DO NOTHING""")
     cur.connection.commit()
 
-def get_student_map(cur):
-    """返回 {student_no: student_id} 映射"""
-    cur.execute("SELECT id, student_no FROM student")
-    return {row[1]: row[0] for row in cur.fetchall()}
-
-def insert_class_image(cur, class_id, image_url, capture_time, period_label, status='PENDING'):
-    """Insert or get existing class_image. Returns (id, was_inserted)."""
+def insert_or_get_class_image(cur, class_id, image_url, capture_time, period_label):
     cur.execute("SELECT id FROM class_image WHERE image_url = %s", (image_url,))
     row = cur.fetchone()
     if row:
         return row[0], False
     if capture_time is None:
         capture_time = datetime.now()
-    cur.execute("""INSERT INTO class_image (class_id, image_url, capture_time, period_label, status, source)
-                   VALUES (%s, %s, %s, %s, %s, 'auto_scan') RETURNING id""",
-                (class_id, image_url, capture_time, period_label, status))
-    ci_id = cur.fetchone()[0]
-    return ci_id, True
+    cur.execute("""INSERT INTO class_image
+                   (class_id, image_url, capture_time, period_label, status, source)
+                   VALUES (%s, %s, %s, %s, 'COMPLETED', 'auto_scan') RETURNING id""",
+                (class_id, image_url, capture_time, period_label))
+    return cur.fetchone()[0], True
 
-def insert_face_record(cur, class_image_id, bbox_json, confidence, quality=None,
-                       student_id=None, person_id=None, cropped_image_url=None, status='DETECTED'):
-    """Insert face_record with optional student and person linkage."""
+def insert_face_record(cur, class_image_id, bbox_json, confidence, quality,
+                        cropped_image_url, face_encoding, person_id, gender=None):
+    """写入 face_record，包括特征向量、person 关联和性别属性 (0=female, 1=male)"""
     cur.execute("""INSERT INTO face_record
-                   (class_image_id, bbox, confidence, quality, student_id,
-                    cropped_image_url, lib_face_id, lib_register_status, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                (class_image_id, bbox_json, confidence, quality, student_id,
-                 cropped_image_url, person_id,
+                   (class_image_id, bbox, confidence, quality,
+                    cropped_image_url, face_encoding,
+                    lib_face_id, lib_register_status, status, gender)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'DETECTED', %s) RETURNING id""",
+                (class_image_id, bbox_json, confidence, quality,
+                 cropped_image_url, face_encoding,
+                 person_id,
                  'registered' if person_id else 'pending',
-                 status))
+                 gender))
     return cur.fetchone()[0]
-
-def update_face_record_person(cur, face_record_id, person_id, student_id=None):
-    """更新 face_record 的 person 关联和 student_id"""
-    cur.execute("""UPDATE face_record
-                   SET lib_face_id = %s,
-                       lib_register_status = 'registered',
-                       student_id = COALESCE(%s, student_id)
-                   WHERE id = %s""",
-                (person_id, student_id, face_record_id))
 
 def insert_emotion_record(cur, face_record_id, dominant_emotion, dominant_confidence,
                            probs_list, dominant_state=None):
-    """Insert emotion_record."""
     probs = probs_list if probs_list else [None] * 7
     cur.execute("""INSERT INTO emotion_record
                    (face_record_id, dominant_emotion, dominant_confidence,
@@ -222,33 +248,38 @@ def insert_emotion_record(cur, face_record_id, dominant_emotion, dominant_confid
                     dominant_state)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (face_record_id, dominant_emotion, dominant_confidence,
-                 probs[0] if len(probs) > 0 else None,
-                 probs[1] if len(probs) > 1 else None,
-                 probs[2] if len(probs) > 2 else None,
-                 probs[3] if len(probs) > 3 else None,
-                 probs[4] if len(probs) > 4 else None,
-                 probs[5] if len(probs) > 5 else None,
-                 probs[6] if len(probs) > 6 else None,
-                 dominant_state))
+                 probs[0], probs[1], probs[2], probs[3],
+                 probs[4], probs[5], probs[6], dominant_state))
     return cur.fetchone()[0]
 
+def update_class_image_counters(cur, ci_id, face_count, emotion_count):
+    cur.execute("""UPDATE class_image
+                   SET face_detected_count = %s,
+                       emotion_recognized_count = %s
+                   WHERE id = %s""",
+                (face_count, emotion_count, ci_id))
+
 # ============================================================
-#  gRPC 引擎调用
+#  gRPC 引擎调用（含特征提取）
 # ============================================================
+
+_GRPC_STUB = None
 
 def get_grpc_stub():
-    channel = grpc.insecure_channel(GRPC_HOST,
-        options=[('grpc.max_send_message_length', 50*1024*1024),
-                 ('grpc.max_receive_message_length', 50*1024*1024)])
-    return FaceServiceStub(channel)
+    global _GRPC_STUB
+    if _GRPC_STUB is None:
+        channel = grpc.insecure_channel(GRPC_HOST,
+            options=[('grpc.max_send_message_length', 50*1024*1024),
+                     ('grpc.max_receive_message_length', 50*1024*1024)])
+        _GRPC_STUB = FaceServiceStub(channel)
+    return _GRPC_STUB
 
 def call_detect_grpc(image_bytes):
-    """Call face_server Analyze with DETECT+QUALITY+EMOTION features."""
+    """Call face_server Analyze with 0xB3 = DETECT|FEATURE|ATTRIBUTE|QUALITY|EMOTION"""
     try:
         stub = get_grpc_stub()
-        req = FaceAnalysisRequest(
-            image_data=image_bytes,
-            enabled_features=0x01 | 0x20 | 0x80 | 0x10)
+        # 0xB3 = 0x01(DETECT) | 0x10(ATTRIBUTE) | 0x20(QUALITY) | 0x80(EMOTION) | 0x02(FEATURE)
+        req = FaceAnalysisRequest(image_data=image_bytes, enabled_features=0xB3)
         resp = stub.Analyze(req, timeout=GRPC_TIMEOUT)
         if not resp.success:
             log.warning("  gRPC Analyze failed: %s", resp.error_message)
@@ -266,6 +297,13 @@ def call_detect_grpc(image_bytes):
                 idx = f.emotion.emotion
                 face['emotion_index'] = idx
                 face['emotion_label'] = labels[idx] if 0 <= idx < len(labels) else '未知'
+            # 提取性别属性 (0=female, 1=male)
+            if f.HasField('attribute'):
+                face['gender'] = f.attribute.gender
+            # 提取512维特征向量
+            if f.feature_dim > 0:
+                vals = struct.unpack(f'{f.feature_dim}f', f.feature)
+                face['feature'] = np.array(vals, dtype=np.float32)
             faces.append(face)
         return faces
     except Exception as e:
@@ -277,7 +315,6 @@ def call_detect_grpc(image_bytes):
 # ============================================================
 
 def crop_face(image_bytes, bbox, margin=CROP_MARGIN):
-    """Crop face from image using bbox [x, y, w, h] with margin. Returns JPEG bytes or None."""
     try:
         img = Image.open(BytesIO(image_bytes))
         x, y, w, h = [int(v) for v in bbox]
@@ -297,20 +334,16 @@ def crop_face(image_bytes, bbox, margin=CROP_MARGIN):
         log.warning("  Crop failed: %s", e)
         return None
 
-def save_crop_to_disk(crop_bytes, school, class_name, date, period, face_record_id):
-    """将裁剪人脸保存到磁盘，返回 URL 路径"""
-    period_safe = re.sub(r'[\\/:*?"<>|]', '_', period)
-    img_dir = CROP_OUTPUT_DIR / school / class_name / date / period_safe
+def save_cropped_face(crop_bytes, school, class_name, date_str, period, face_record_id):
+    period_safe = re.sub(r'[\\/:*?"<>|]', '_', period) if period else 'other'
+    img_dir = CROP_OUTPUT_ROOT / 'cropped' / school / class_name / date_str / period_safe
     img_dir.mkdir(parents=True, exist_ok=True)
     output_path = img_dir / f'face_{face_record_id}.jpg'
     with open(output_path, 'wb') as f:
         f.write(crop_bytes)
-    # 返回相对路径（以 /images/cropped/ 开头）
-    relative = f'/images/cropped/{school}/{class_name}/{date}/{period_safe}/face_{face_record_id}.jpg'
-    return relative
+    return f'/images/cropped/{school}/{class_name}/{date_str}/{period_safe}/face_{face_record_id}.jpg'
 
 def parse_filename_datetime(filename):
-    """Try to extract datetime from filename like 20260525135429_*.jpg"""
     m = re.match(r'(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})', filename)
     if m:
         return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
@@ -318,7 +351,6 @@ def parse_filename_datetime(filename):
     return None
 
 def map_to_dominant_state(emotion_label):
-    """Map VisionMind Chinese emotion label to 3-state."""
     mapping = {
         '中性': 'ENGAGED', '开心': 'ENGAGED', '惊讶': 'ENGAGED',
         '伤心': 'WITHDRAWN', '恐惧': 'WITHDRAWN',
@@ -327,215 +359,142 @@ def map_to_dominant_state(emotion_label):
     return mapping.get(emotion_label, 'UNKNOWN')
 
 # ============================================================
-#  匹配已有的 face_record（student_id 为 NULL 的记录）
+#  检查点
 # ============================================================
 
-def match_existing_faces(dry_run=False):
-    """对数据库中已存在但 student_id IS NULL 的 face_record 进行人脸匹配"""
-    conn = db_connect()
-    cur = conn.cursor()
+def save_checkpoint(data):
+    with open(CHECKPOINT_FILE, 'w') as f:
+        json.dump(data, f)
 
-    # 加载已有 person 注册表
-    registry = load_person_registry()
-    log.info("Loaded person registry: %d persons, next_id=%s",
-             len(registry['persons']), registry['next_person_id'])
-
-    # 获取已有的 student_id→person_id 映射（从已关联的记录）
-    cur.execute("""
-        SELECT DISTINCT fr.student_id, fr.lib_face_id
-        FROM face_record fr
-        WHERE fr.student_id IS NOT NULL AND fr.lib_face_id IS NOT NULL
-    """)
-    for student_id, person_id in cur.fetchall():
-        if person_id and person_id.startswith('person_'):
-            registry['persons'].setdefault(person_id, {'student_id': None, 'face_count': 0, 'avg_similarity': 0.0})
-            registry['persons'][person_id]['student_id'] = student_id
-
-    # 获取所有未关联的 face_record（有 bbox 信息才能重新裁剪）
-    cur.execute("""
-        SELECT fr.id, fr.class_image_id, fr.bbox, ci.image_url,
-               ci.capture_time, fr.lib_face_id
-        FROM face_record fr
-        JOIN class_image ci ON ci.id = fr.class_image_id
-        WHERE fr.student_id IS NULL
-          AND fr.bbox IS NOT NULL
-          AND fr.lib_face_id IS NULL
-        ORDER BY fr.id
-    """)
-    rows = cur.fetchall()
-    total = len(rows)
-    log.info("Found %d unmatched face_records to process", total)
-
-    if total == 0:
-        log.info("No unmatched face_records found. All done!")
-        return
-
-    stats = {'matched': 0, 'registered': 0, 'errors': 0, 'skipped': 0,
-             'start_time': time.time()}
-
-    for idx, (fr_id, ci_id, bbox_json, img_url, capture_time, existing_pid) in enumerate(rows):
-        if idx % 100 == 0 and idx > 0:
-            elapsed = time.time() - stats['start_time']
-            rate = idx / elapsed if elapsed > 0 else 0
-            log.info("--- Progress: %d/%d faces, %.1f faces/min, matched=%d registered=%d ---",
-                     idx, total, rate * 60, stats['matched'], stats['registered'])
-
-        # 跳过已处理的
-        if existing_pid and existing_pid.startswith('person_'):
-            stats['skipped'] += 1
-            continue
-
-        # 从原图按 bbox 裁剪
-        try:
-            with open(img_url, 'rb') as f:
-                image_bytes = f.read()
-        except Exception as e:
-            log.warning("  Cannot read image %s: %s", img_url, e)
-            stats['errors'] += 1
-            continue
-
-        bbox = json.loads(bbox_json) if isinstance(bbox_json, str) else bbox_json
-        crop_bytes = crop_face(image_bytes,
-                               [bbox.get('x', 0), bbox.get('y', 0),
-                                bbox.get('width', 0), bbox.get('height', 0)])
-        if crop_bytes is None:
-            stats['skipped'] += 1
-            continue
-
-        # VisionMind 1:N 搜索
-        matches = vm_search_face(crop_bytes)
-        person_id = None
-        similarity = 0.0
-
-        if matches:
-            matched_id, similarity = matches[0]
-            person_id = get_or_create_person(registry, matched_id=matched_id)
-            update_person_stats(registry, person_id, similarity)
-            stats['matched'] += 1
-            log.debug("  Face %d matched to %s (sim=%.3f)", fr_id, person_id, similarity)
-        else:
-            # 新面孔：注册到人脸库
-            person_id = get_or_create_person(registry)
-            # 保存裁剪图到磁盘
-            school = '官渡一中'
-            class_name = '初一班'
-            date_str = capture_time.strftime('%Y-%m-%d') if capture_time else 'unknown'
-            period = 'other'
-            try:
-                # 从 DB 获取 period_label
-                cur2 = conn.cursor()
-                cur2.execute("SELECT period_label FROM class_image WHERE id = %s", (ci_id,))
-                row2 = cur2.fetchone()
-                if row2 and row2[0]:
-                    period = row2[0]
-                cur2.close()
-            except:
-                pass
-            crop_url = save_crop_to_disk(crop_bytes, school, class_name, date_str, period, fr_id)
-            reg_ok = vm_register_face(person_id, crop_bytes,
-                                      extra_json=json.dumps({'face_record_id': fr_id}))
-            if reg_ok:
-                stats['registered'] += 1
-            else:
-                log.warning("  Register failed for face %d", fr_id)
-            stats['registered'] += 1
-
-        # 更新数据库
-        if not dry_run:
-            update_face_record_person(cur, fr_id, person_id, student_id=None)
-            # 保存裁剪图 URL（如果之前没保存过）
-            if crop_bytes and existing_pid is None:
-                school = '官渡一中'
-                class_name = '初一班'
-                date_str = capture_time.strftime('%Y-%m-%d') if capture_time else 'unknown'
-                period = 'other'
-                crop_url = save_crop_to_disk(crop_bytes, school, class_name, date_str, period, fr_id)
-                cur.execute("UPDATE face_record SET cropped_image_url = %s WHERE id = %s",
-                           (crop_url, fr_id))
-            conn.commit()
-
-        # 保存 person registry 每 200 条
-        if idx > 0 and idx % 200 == 0:
-            save_person_registry(registry)
-
-    # 最终统计
-    elapsed = time.time() - stats['start_time']
-    save_person_registry(registry)
-    log.info("=" * 60)
-    log.info("人脸匹配完成!")
-    log.info("  处理: %d 张人脸", total)
-    log.info("  匹配: %d (已识别)", stats['matched'])
-    log.info("  注册: %d (新面孔)", stats['registered'])
-    log.info("  错误: %d", stats['errors'])
-    log.info("  耗时: %.0fs (%.1f faces/min)", elapsed, (total / elapsed * 60) if elapsed > 0 else 0)
-    log.info("  Person 注册表: %d 人", len(registry['persons']))
-    log.info("=" * 60)
-
-    # 输出各 person 统计
-    persons_sorted = sorted(registry['persons'].items(), key=lambda x: x[1]['face_count'], reverse=True)
-    log.info("Top persons (by face count):")
-    for pid, info in persons_sorted[:10]:
-        sid = info.get('student_id')
-        sid_str = f"→ student_{sid}" if sid else "(unmatched)"
-        log.info("  %s: %d faces, avg_sim=%.3f %s", pid, info['face_count'], info['avg_similarity'], sid_str)
-
-    cur.close()
-    conn.close()
+def load_checkpoint():
+    try:
+        with open(CHECKPOINT_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
 
 # ============================================================
-#  主流程（检测 + 注册 + 匹配一体化）
+#  主流程
 # ============================================================
 
 def scan_images(max_images=None, start_id=None, resume=False, dry_run=False):
-    """Main pipeline with face registration and matching."""
     log.info("=" * 60)
-    log.info("数据初始化管线启动（含人脸注册+匹配）")
-    log.info(f"  VM_API: {VM_API}")
-    log.info(f"  DB: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
-    log.info(f"  Data: {DATA_ROOT}")
-    log.info(f"  Max images: {max_images or 'unlimited'}")
-    log.info(f"  Resume: {resume}")
-    log.info(f"  Dry run: {dry_run}")
+    log.info("数据初始化管线启动（含特征提取+人脸匹配）")
+    log.info(f"  特征匹配阈值: {FEATURE_MATCH_THRESHOLD}")
+    log.info(f"  空间距离阈值: {SPATIAL_DISTANCE_THRESHOLD}px")
     log.info("=" * 60)
 
     conn = db_connect()
     cur = conn.cursor()
     ensure_seed_data(cur)
-    student_map = get_student_map(cur)
-    log.info("  Known students: %s", student_map)
-
-    # Load checkpoint for resume
+    matcher = FaceMatcher()
     cp = load_checkpoint() if resume else None
     processed_ids = set(cp.get('processed_ids', [])) if cp else set()
-    registry = load_person_registry()
-    log.info("  Already processed: %d images", len(processed_ids))
-    log.info("  Person registry: %d persons", len(registry['persons']))
+
+    # Resume 时从数据库加载已处理的图片和人员信息
+    if resume:
+        # 1. 从 class_image 表找出已处理的图片路径
+        cur.execute("SELECT image_url FROM class_image WHERE status = 'COMPLETED'")
+        db_processed = {row[0] for row in cur.fetchall()}
+        log.info("  DB 中已处理的 class_image: %d 张", len(db_processed))
+        # 将 DB 中已存在的也纳入 processed_ids，避免重复创建
+        processed_ids.update(db_processed)
+
+        # 2. 恢复 person 注册表：从 face_encoding 重建平均特征向量
+        #    按 lib_face_id 分组，聚合特征向量
+        cur.execute("""
+            SELECT fr.lib_face_id, 
+                   MIN(fr.face_encoding) as face_encoding, 
+                   COUNT(*) as cnt
+            FROM face_record fr
+            WHERE fr.lib_face_id IS NOT NULL
+              AND fr.lib_face_id LIKE 'person_%%'
+              AND fr.face_encoding IS NOT NULL
+              AND fr.face_encoding != ''
+            GROUP BY fr.lib_face_id
+        """)
+        db_persons = cur.fetchall()
+        loaded_from_db = 0
+        for pid, enc_b64, cnt in db_persons:
+            try:
+                raw = base64.b64decode(enc_b64)
+                vec = np.frombuffer(raw, dtype=np.float32)
+                if len(vec) != 512:
+                    continue
+                # 合并：如果 registry 已有则取平均，否则用 DB 的
+                if pid in matcher.persons:
+                    old_cnt = matcher.persons[pid]['face_count']
+                    old_vec = np.array(matcher.persons[pid]['avg_feature'], dtype=np.float32)
+                    merged = (old_vec * old_cnt + vec) / (old_cnt + 1)
+                    matcher.persons[pid]['avg_feature'] = merged.tolist()
+                    matcher.persons[pid]['face_count'] = old_cnt + 1
+                else:
+                    matcher.persons[pid] = {
+                        'avg_feature': vec.tolist(),
+                        'face_count': cnt,
+                        'student_id': None,
+                    }
+                loaded_from_db += 1
+            except Exception as e:
+                log.warning("  跳过 person %s: %s", pid, e)
+
+            if pid and pid.startswith('person_'):
+                try:
+                    num = int(pid.split('_')[1])
+                    if num >= matcher.next_pid:
+                        matcher.next_pid = num + 1
+                except ValueError:
+                    pass
+
+        log.info("  FaceMatcher 恢复: %d persons (from DB), next_pid=%s",
+                 loaded_from_db, matcher.next_pid)
+        cur.execute("""
+            SELECT fr.lib_face_id, fr.student_id
+            FROM face_record fr
+            WHERE fr.lib_face_id IS NOT NULL AND fr.student_id IS NOT NULL
+        """)
+        for pid, sid in cur.fetchall():
+            if pid in matcher.persons:
+                matcher.persons[pid]['student_id'] = sid
+
+        # 3. 恢复座位历史：从 bbox 字段重建每个人的座位位置
+        cur.execute("""
+            SELECT fr.lib_face_id,
+                   ((fr.bbox::json->>'x')::numeric + (fr.bbox::json->>'width')::numeric / 2)::int AS cx,
+                   ((fr.bbox::json->>'y')::numeric + (fr.bbox::json->>'height')::numeric / 2)::int AS cy,
+                   ci.period_label
+            FROM face_record fr
+            JOIN class_image ci ON fr.class_image_id = ci.id
+            WHERE fr.lib_face_id IS NOT NULL
+              AND fr.lib_face_id LIKE 'person_%%'
+              AND fr.bbox IS NOT NULL AND fr.bbox != ''
+        """)
+        seat_count = 0
+        for pid, cx, cy, period in cur.fetchall():
+            if pid in matcher.persons:
+                matcher.persons[pid].setdefault('seats', []).append([cx, cy, period])
+                seat_count += 1
+        log.info("  座位历史恢复: %d 条 (seats)", seat_count)
 
     all_images = sorted(DATA_ROOT.rglob('*.jpg'))
-    if not all_images:
-        log.error("No JPG images found in %s", DATA_ROOT)
-        return
-    log.info("  Total images found: %d", len(all_images))
+    log.info(f"  Total images: {len(all_images)}, already processed: {len(processed_ids)}")
 
     stats = {'scanned': 0, 'detected_faces': 0, 'emotions': 0,
-             'matched_to_person': 0, 'registered_new': 0,
+             'matched': 0, 'new_persons': 0,
              'errors': 0, 'skipped': 0, 'start_time': time.time()}
 
     for idx, img_path in enumerate(all_images):
         if max_images and stats['scanned'] >= max_images:
-            log.info("Reached max-images limit (%d)", max_images)
             break
         if start_id and idx < start_id:
             continue
 
         rel_path = str(img_path.relative_to(DATA_ROOT))
         path_key = str(img_path)
-
         if path_key in processed_ids:
             stats['skipped'] += 1
             continue
 
-        # Parse path: {school}/{class}/{date}/{period}/{filename}
         parts = rel_path.replace('\\', '/').split('/')
         school = parts[0] if len(parts) >= 1 else '官渡一中'
         class_name = parts[1] if len(parts) >= 2 else '初一班'
@@ -546,7 +505,6 @@ def scan_images(max_images=None, start_id=None, resume=False, dry_run=False):
         if capture_time is None:
             capture_time = datetime.fromtimestamp(os.path.getmtime(img_path))
 
-        # Read image
         try:
             with open(img_path, 'rb') as f:
                 image_bytes = f.read()
@@ -555,7 +513,6 @@ def scan_images(max_images=None, start_id=None, resume=False, dry_run=False):
             stats['errors'] += 1
             continue
 
-        # Step 1: Face detection
         log.info("[%d/%d] %s", idx + 1, len(all_images), rel_path)
         try:
             faces = call_detect_grpc(image_bytes)
@@ -567,159 +524,275 @@ def scan_images(max_images=None, start_id=None, resume=False, dry_run=False):
         if not faces:
             log.info("  No faces detected")
             if not dry_run:
-                insert_class_image(cur, 1, str(img_path), capture_time, period_label, 'COMPLETED')
-                cur.execute("""
-                    UPDATE class_image SET face_detected_count = 0, emotion_recognized_count = 0
-                    WHERE image_url = %s
-                """, (str(img_path),))
+                ci_id, _ = insert_or_get_class_image(cur, 1, str(img_path), capture_time, period_label)
+                update_class_image_counters(cur, ci_id, 0, 0)
                 conn.commit()
             stats['scanned'] += 1
             processed_ids.add(path_key)
             continue
 
-        # Step 2: Insert class_image
         if not dry_run:
-            ci_id, _ = insert_class_image(cur, 1, str(img_path), capture_time, period_label, 'COMPLETED')
+            ci_id, _ = insert_or_get_class_image(cur, 1, str(img_path), capture_time, period_label)
         else:
             ci_id = -1
 
         stats['scanned'] += 1
-        face_in_image = 0
-        emotion_in_image = 0
+        face_count = 0
+        emotion_count = 0
+        date_str = capture_time.strftime('%Y-%m-%d') if capture_time else 'unknown'
 
         for fi, face in enumerate(faces):
             bbox_list = face.get('bbox', [0, 0, 0, 0])
             confidence = face.get('confidence', 0)
             quality = face.get('quality', 0)
             emotion_label = face.get('emotion_label')
-            emotion_index = face.get('emotion_index')
+            gender = face.get('gender')  # 0=female, 1=male (from gRPC FaceAttribute)
+            feature_vec = face.get('feature')
+            has_feature = feature_vec is not None
 
             if confidence < CONFIDENCE_THRESHOLD:
                 continue
 
             x, y, w, h = bbox_list[:4]
             bbox_json = json.dumps({'x': x, 'y': y, 'width': w, 'height': h})
+            bbox_center = (x + w // 2, y + h // 2) if w > 0 and h > 0 else None
 
-            # Step 3: Crop face
             crop_bytes = crop_face(image_bytes, [x, y, w, h])
 
-            if not dry_run and crop_bytes:
-                # Step 3a: VisionMind 1:N search → match or register
-                matches = vm_search_face(crop_bytes)
+            if not dry_run:
+                # 人脸匹配（特征 + 空间位置联合评分）
                 person_id = None
-                student_id = None
+                if has_feature:
+                    pid, sim = matcher.match(feature_vec, bbox_center, period=period_label)
+                    if pid:
+                        person_id = pid
+                        matcher.update_person(pid, feature_vec)
+                        matcher.record_seat(pid, bbox_center, period_label)
+                        stats['matched'] += 1
+                    else:
+                        person_id = matcher.register_new(feature_vec)
+                        matcher.record_seat(person_id, bbox_center, period_label)
+                        stats['new_persons'] += 1
 
-                if matches:
-                    matched_id, similarity = matches[0]
-                    person_id = get_or_create_person(registry, matched_id=matched_id)
-                    update_person_stats(registry, person_id, similarity)
-                    # 如果该 person 已关联 student，直接使用
-                    person_info = registry['persons'].get(person_id, {})
-                    student_id = person_info.get('student_id')
-                    stats['matched_to_person'] += 1
-                    log.debug("  Face matched to %s (sim=%.3f)", person_id, similarity)
-                else:
-                    # 新面孔：注册到人脸库
-                    person_id = get_or_create_person(registry)
-                    reg_ok = vm_register_face(person_id, crop_bytes,
-                                              extra_json=json.dumps({'face_record_id': ci_id}))
-                    stats['registered_new'] += 1
-                    log.debug("  New face registered as %s", person_id)
+                # 编码特征向量为 base64 存储
+                face_encoding_b64 = None
+                if has_feature:
+                    face_encoding_b64 = base64.b64encode(feature_vec.tobytes()).decode()
 
-                # Step 3b: Save cropped image to disk
-                date_str = capture_time.strftime('%Y-%m-%d') if capture_time else 'unknown'
-                crop_url = save_crop_to_disk(crop_bytes, school, class_name,
-                                             date_str, period_label, ci_id * 1000 + fi)
-
-                # Step 4: Insert face_record (with person linkage)
-                fr_id = insert_face_record(cur, ci_id, bbox_json, confidence,
-                                           quality, student_id, person_id, crop_url)
-                face_in_image += 1
+                # 写入 face_record
+                fr_id = insert_face_record(cur, ci_id, bbox_json, confidence, quality,
+                                            cropped_image_url=None,
+                                            face_encoding=face_encoding_b64,
+                                            person_id=person_id,
+                                            gender=gender)
+                face_count += 1
                 stats['detected_faces'] += 1
 
-                # Step 5: Insert emotion_record
+                # 保存裁剪图
+                if crop_bytes:
+                    crop_url = save_cropped_face(crop_bytes, school, class_name,
+                                                 date_str, period_label, fr_id)
+                    cur.execute("UPDATE face_record SET cropped_image_url = %s WHERE id = %s",
+                               (crop_url, fr_id))
+
+                # 情绪记录
                 if emotion_label:
                     dominant_state = map_to_dominant_state(emotion_label)
                     insert_emotion_record(cur, fr_id, emotion_label, confidence,
                                           [], dominant_state)
+                    emotion_count += 1
                     stats['emotions'] += 1
-                    emotion_in_image += 1
 
-        # Commit per image
+        # 提交
         if not dry_run:
-            # Update class_image counters
-            cur.execute("""
-                UPDATE class_image
-                SET face_detected_count = %s,
-                    emotion_recognized_count = %s
-                WHERE id = %s
-            """, (face_in_image, emotion_in_image, ci_id))
+            update_class_image_counters(cur, ci_id, face_count, emotion_count)
             conn.commit()
 
-        # Save checkpoint
         processed_ids.add(path_key)
-        save_checkpoint({'processed_ids': list(processed_ids),
-                         'stats': stats, 'last_file': rel_path})
-        save_person_registry(registry)
 
-        # Progress log
         if (idx + 1) % BATCH_SIZE == 0:
+            # 每批提交后保存 checkpoint 和 person registry（各约 11s，不能每张图都做）
+            save_checkpoint({'processed_ids': list(processed_ids),
+                             'stats': stats, 'last_file': rel_path})
+            matcher.save()
             elapsed = time.time() - stats['start_time']
             rate = (idx + 1) / elapsed if elapsed > 0 else 0
-            log.info("--- Progress: %d/%d images, %.1f img/min, %d faces, %d emotions, %d matched ---",
+            log.info("--- Progress: %d/%d images, %.1f img/min, %d faces, %d matched/%d new ---",
                      idx + 1, len(all_images), rate * 60,
-                     stats['detected_faces'], stats['emotions'], stats['matched_to_person'])
+                     stats['detected_faces'], stats['matched'], stats['new_persons'])
 
-    # Final stats
+    # 最终报告
     elapsed = time.time() - stats['start_time']
+    matcher.save()
     log.info("=" * 60)
     log.info("完成!")
     log.info(f"  处理: {stats['scanned']} 张图片")
-    log.info(f"  检测: {stats['detected_faces']} 张人脸")
+    log.info(f"  人脸: {stats['detected_faces']} 张 ({stats['matched']}匹配 + {stats['new_persons']}新)")
     log.info(f"  情绪: {stats['emotions']} 条记录")
-    log.info(f"  匹配到已有人员: {stats['matched_to_person']}")
-    log.info(f"  注册为新面孔: {stats['registered_new']}")
-    log.info(f"  错误: {stats['errors']}")
-    log.info(f"  跳过: {stats['skipped']}")
-    log.info(f"  耗时: {elapsed:.0f}s ({stats['scanned']/elapsed:.1f} img/s)")
+    log.info(f"  错误: {stats['errors']}, 跳过: {stats['skipped']}")
+    log.info(f"  耗时: {elapsed:.0f}s")
+    log.info(f"  Person注册表: {len(matcher.persons)} 人")
     log.info("=" * 60)
 
-    # Print person summary
-    persons_sorted = sorted(registry['persons'].items(), key=lambda x: x[1]['face_count'], reverse=True)
-    log.info("Top persons (largest clusters = most frequent students):")
-    for pid, info in persons_sorted[:10]:
+    # 输出各 person 统计
+    sorted_p = sorted(matcher.persons.items(), key=lambda x: x[1]['face_count'], reverse=True)
+    log.info("Top persons:")
+    for pid, info in sorted_p[:10]:
         sid = info.get('student_id')
-        sid_str = f"→ student_{sid}" if sid else "(unmatched)"
-        log.info("  %s: %d faces, avg_sim=%.3f %s", pid, info['face_count'], info['avg_similarity'], sid_str)
+        sid_str = f"→ student_{sid}" if sid else ""
+        log.info("  %s: %d faces%s", pid, info['face_count'], sid_str)
 
     cur.close()
     conn.close()
 
 
-def load_checkpoint():
-    try:
-        with open(CHECKPOINT_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
+# ============================================================
+#  Person → Student 关联（基于频率的自动标注）
+# ============================================================
 
-def save_checkpoint(data):
-    with open(CHECKPOINT_FILE, 'w') as f:
-        json.dump(data, f)
+def link_students(dry_run=False, min_frequency=3):
+    """将管线聚类出的高频 person 自动关联到学生。
+    
+    策略：
+    1. 已有 student 表 → 按 face_count 分配 top N 个 person
+    2. 剩余 face_count >= min_frequency 的 person → 自动创建新学生
+    3. 低频 person (face_count < min_frequency) 保持未关联
+    """
+    conn = db_connect()
+    cur = conn.cursor()
+
+    # 获取已有学生
+    cur.execute("SELECT id, name, student_no FROM student ORDER BY id")
+    existing_students = cur.fetchall()
+    log.info("已有学生: %d 人", len(existing_students))
+
+    # 获取当前最大学号
+    cur.execute("SELECT COALESCE(MAX(CAST(SUBSTRING(student_no FROM 4) AS INTEGER)), 0) FROM student")
+    max_no = cur.fetchone()[0] or 0
+
+    # 获取所有已聚类但未关联的 person（按出现频率降序）
+    cur.execute("""
+        SELECT lib_face_id, count(*) as face_count
+        FROM face_record
+        WHERE lib_face_id IS NOT NULL
+          AND (student_id IS NULL OR student_id = 0)
+        GROUP BY lib_face_id
+        ORDER BY count(*) DESC
+    """)
+    unlinked_persons = cur.fetchall()
+    log.info("未关联 person: %d 个 (face_count >= %d: %d 个)",
+             len(unlinked_persons), min_frequency,
+             sum(1 for _, c in unlinked_persons if c >= min_frequency))
+
+    if not unlinked_persons:
+        log.info("所有 person 已关联")
+        cur.close()
+        conn.close()
+        return
+
+    n_existing = len(existing_students)
+    linked = 0
+    new_students = 0
+
+    log.info("=" * 60)
+    log.info("学生关联流程")
+    log.info("-" * 60)
+
+    # 阶段1: 已有学生 → 分配 top N 个高频 person
+    for i, (student_id, student_name, _) in enumerate(existing_students):
+        if i >= len(unlinked_persons):
+            break
+        person_id, face_count = unlinked_persons[i]
+        if not dry_run:
+            cur.execute("""UPDATE face_record SET student_id = %s
+                           WHERE lib_face_id = %s AND (student_id IS NULL OR student_id = 0)""",
+                        (student_id, person_id))
+            cnt = cur.rowcount
+            conn.commit()
+        else:
+            cnt = '(dry-run)'
+        log.info("  [已有] %s (%d faces) → %s (student_id=%s): %s",
+                 person_id, face_count, student_name, student_id, cnt)
+        linked += 1
+
+    # 阶段2: 剩余高频 person → 创建新学生
+    for person_id, face_count in unlinked_persons[n_existing:]:
+        if face_count < min_frequency:
+            break
+        max_no += 1
+        new_id = max_no
+        student_no = f'stu{new_id:04d}'
+        student_name = f'学生{new_id:03d}'
+
+        if not dry_run:
+            cur.execute("""INSERT INTO student (id, name, student_no, status, class_id)
+                           VALUES (DEFAULT, %s, %s, 'active', 1) RETURNING id""",
+                        (student_name, student_no))
+            new_student_id = cur.fetchone()[0]
+            cur.execute("SELECT setval('student_id_seq', GREATEST(nextval('student_id_seq'), %s))",
+                       (new_student_id,))
+            cur.execute("""UPDATE face_record SET student_id = %s
+                           WHERE lib_face_id = %s AND (student_id IS NULL OR student_id = 0)""",
+                        (new_student_id, person_id))
+            cnt = cur.rowcount
+            conn.commit()
+        else:
+            new_student_id = '(dry-run)'
+            cnt = '(dry-run)'
+
+        log.info("  [新建] %s (%d faces) → %s (student_id=%s): %s",
+                 person_id, face_count, student_name, new_student_id, cnt)
+        linked += 1
+        new_students += 1
+
+    # 更新 person registry
+    try:
+        with open(PERSONS_FILE) as f:
+            registry = json.load(f)
+        persons_dict = registry.get('persons', {})
+
+        cur.execute("SELECT id, name FROM student WHERE id NOT IN (SELECT id FROM student LIMIT 0)")
+        cur.execute("SELECT id, name FROM student ORDER BY id")
+        all_students = cur.fetchall()
+
+        for person_id, face_count in unlinked_persons:
+            if face_count < min_frequency:
+                break
+            if person_id in persons_dict:
+                cur.execute("SELECT student_id FROM face_record WHERE lib_face_id = %s AND student_id IS NOT NULL LIMIT 1", (person_id,))
+                row = cur.fetchone()
+                if row:
+                    persons_dict[person_id]['student_id'] = row[0]
+
+        registry['persons'] = persons_dict
+        with open(PERSONS_FILE, 'w') as f:
+            json.dump(registry, f, indent=2)
+    except Exception as e:
+        log.warning("更新 person registry 失败: %s", e)
+
+    log.info("-" * 60)
+    log.info("关联完成: %d 个学生 (%d 新建)", linked, new_students)
+
+    cur.execute("SELECT count(*) FROM face_record WHERE student_id IS NOT NULL")
+    linked_total = cur.fetchone()[0]
+    log.info("face_record.student_id 非空: %s 条 / %s 总", linked_total,
+             (cur.execute("SELECT count(*) FROM face_record") or cur.fetchone() or ['?'])[0])
+
+    cur.close()
+    conn.close()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='数据初始化管线（含人脸注册+匹配）')
-    parser.add_argument('--max-images', type=int, default=None, help='最大处理图片数')
-    parser.add_argument('--start-id', type=int, default=None, help='起始索引')
-    parser.add_argument('--resume', action='store_true', help='断点续传')
-    parser.add_argument('--dry-run', action='store_true', help='干跑模式')
-    parser.add_argument('--match-only', action='store_true',
-                        help='仅对已有 face_record 做匹配（不重新检测）')
+    parser = argparse.ArgumentParser(description='数据初始化管线（含特征提取+人脸匹配）')
+    parser.add_argument('--max-images', type=int, default=None)
+    parser.add_argument('--start-id', type=int, default=None)
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--link-students', action='store_true',
+                        help='自动关联 top person 到已知学生')
     args = parser.parse_args()
-
-    if args.match_only:
-        match_existing_faces(dry_run=args.dry_run)
+    if args.link_students:
+        link_students(dry_run=args.dry_run)
     else:
         scan_images(max_images=args.max_images, start_id=args.start_id,
                     resume=args.resume, dry_run=args.dry_run)

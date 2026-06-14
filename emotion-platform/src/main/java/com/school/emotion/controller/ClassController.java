@@ -116,7 +116,7 @@ public class ClassController {
                 row.put("name", "人脸#" + fr.getId());
                 row.put("studentNo", "");
                 row.put("faceRecordId", fr.getId());
-                row.put("croppedImageUrl", com.school.emotion.controller.SchoolTreeController.toImageUrl(fr.getCroppedImageUrl()));
+                row.put("croppedImageUrl", "/img/" + fr.getId());
                 row.put("dominantEmotion", er.getDominantEmotion());
                 row.put("dominantConfidence", er.getDominantConfidence());
                 row.put("happy", er.getEmotionHappy() != null ? Math.round(er.getEmotionHappy() * 100) : 0);

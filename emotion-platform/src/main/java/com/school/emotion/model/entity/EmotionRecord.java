@@ -41,6 +41,12 @@ public class EmotionRecord {
     @Column(name = "dominant_confidence", nullable = false)
     private Float dominantConfidence;
 
+    @Column(name = "dominant_state", length = 20)
+    private String dominantState;
+
+    @Column(name = "emotional_cohesion")
+    private Float emotionalCohesion;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -66,5 +72,9 @@ public class EmotionRecord {
     public void setDominantEmotion(String dominantEmotion) { this.dominantEmotion = dominantEmotion; }
     public Float getDominantConfidence() { return dominantConfidence; }
     public void setDominantConfidence(Float dominantConfidence) { this.dominantConfidence = dominantConfidence; }
+    public String getDominantState() { return dominantState; }
+    public void setDominantState(String dominantState) { this.dominantState = dominantState; }
+    public Float getEmotionalCohesion() { return emotionalCohesion; }
+    public void setEmotionalCohesion(Float emotionalCohesion) { this.emotionalCohesion = emotionalCohesion; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }

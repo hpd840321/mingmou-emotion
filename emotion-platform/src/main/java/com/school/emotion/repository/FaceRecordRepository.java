@@ -10,6 +10,7 @@ public interface FaceRecordRepository extends JpaRepository<FaceRecord, Long> {
     List<FaceRecord> findByClassImageId(Long classImageId);
     List<FaceRecord> findByStudentId(Long studentId);
     Optional<FaceRecord> findByLibFaceId(String libFaceId);
+    List<FaceRecord> findByClassImage_Clazz_IdAndStudentIdIsNull(Long classId);
 
     @Query("SELECT DISTINCT fr.classImage.id FROM FaceRecord fr WHERE fr.errorMessage IS NOT NULL")
     List<Long> findClassImageIdsWithFailedFaces();
