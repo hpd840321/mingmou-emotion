@@ -119,7 +119,7 @@
                   <div class="emotion-bar">
                     <div v-for="(v, k) in row.emotions" :key="k" class="emotion-seg"
                       :style="{ width: ((v || 0) * 100) + '%', background: emotionColors[k] }"
-                      :title="emotionNameCN(k) + ': ' + ((v || 0) * 100).toFixed(0) + '%'" />
+                      :title="emotionNameCN(String(k)) + ': ' + ((v || 0) * 100).toFixed(0) + '%'" />
                   </div>
                 </template>
               </el-table-column>
