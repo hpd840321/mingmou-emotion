@@ -10,9 +10,6 @@ import com.school.emotion.repository.ClassImageRepository;
 import com.school.emotion.repository.EmotionRecordRepository;
 import com.school.emotion.repository.FaceRecordRepository;
 import com.school.emotion.repository.GradeRepository;
-import com.school.emotion.service.ai.GrpcFaceServiceClient;
-import com.craftlabs.visionmind.core.grpc.proto.FaceAnalysisResponse;
-import com.craftlabs.visionmind.core.grpc.proto.FaceResult;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +36,6 @@ public class FaceProcessingPipeline {
     private final FaceCroppingService croppingService;
     private final FaceRegistrationService registrationService;
     private final PipelineProgressService progressService;
-    private final GrpcFaceServiceClient grpcFaceClient;
     private final TaskExecutor pipelineExecutor;
 
     private final float confidenceThreshold;
@@ -54,7 +50,6 @@ public class FaceProcessingPipeline {
             FaceCroppingService croppingService,
             FaceRegistrationService registrationService,
             PipelineProgressService progressService,
-            GrpcFaceServiceClient grpcFaceClient,
             TaskExecutor pipelineExecutor,
             @Value("${app.face.confidence-threshold:0.3}") float confidenceThreshold,
             @Value("${app.pipeline.batch-size:50}") int batchSize) {
@@ -66,7 +61,6 @@ public class FaceProcessingPipeline {
         this.croppingService = croppingService;
         this.registrationService = registrationService;
         this.progressService = progressService;
-        this.grpcFaceClient = grpcFaceClient;
         this.pipelineExecutor = pipelineExecutor;
         this.confidenceThreshold = confidenceThreshold;
         this.batchSize = batchSize;
@@ -156,55 +150,36 @@ public class FaceProcessingPipeline {
             return new ProcessResult(false, false);
         }
 
-        // Face detection via gRPC Analyze (supports multi-face, detects small faces)
-        FaceAnalysisResponse grpcResponse;
+        // Face detection via VisionMind REST API
+        FaceDetectionResult detectionResult;
         try {
-            grpcResponse = grpcFaceClient.analyze(imageBytes, GrpcFaceServiceClient.STANDARD_FEATURES);
+            detectionResult = visionMindClient.detectFaces(imageBytes);
         } catch (Exception e) {
-            log.warn("gRPC Analyze failed for image {}: {}, falling back to REST detect", ci.getId(), e.getMessage());
-            markFailed(ci, "gRPC detection error: " + e.getMessage());
+            log.warn("REST detect failed for image {}: {}", ci.getId(), e.getMessage());
+            markFailed(ci, "Detection error: " + e.getMessage());
             return new ProcessResult(false, false);
         }
 
-        if (!grpcResponse.getSuccess() || grpcResponse.getFacesCount() == 0) {
+        if (detectionResult == null || detectionResult.getFaces() == null || detectionResult.getFaces().isEmpty()) {
             markCompleted(ci);
             return new ProcessResult(false, false);
         }
 
-        // Convert gRPC FaceResult list to internal format, filter by confidence
-        List<FaceDetectionResult.Face> validFaces = new java.util.ArrayList<>();
-        List<FaceResult> validGrpcFaces = new java.util.ArrayList<>();  // parallel list for emotion data
-        for (FaceResult grpcFace : grpcResponse.getFacesList()) {
-            float conf = grpcFace.getToken().getConfidence();
-            if (conf < confidenceThreshold) continue;
-
-            FaceDetectionResult.Face face = new FaceDetectionResult.Face();
-            FaceDetectionResult.BBox bbox = new FaceDetectionResult.BBox();
-            bbox.setX(grpcFace.getToken().getX());
-            bbox.setY(grpcFace.getToken().getY());
-            bbox.setWidth(grpcFace.getToken().getWidth());
-            bbox.setHeight(grpcFace.getToken().getHeight());
-            face.setBbox(bbox);
-            face.setConfidence(conf);
-            face.setQuality(grpcFace.getQuality());
-            validFaces.add(face);
-            validGrpcFaces.add(grpcFace);
-        }
+        // Filter by confidence, sort descending
+        List<FaceDetectionResult.Face> validFaces = detectionResult.getFaces().stream()
+                .filter(face -> face.getConfidence() != null && face.getConfidence() >= confidenceThreshold)
+                .sorted(java.util.Comparator.comparing(FaceDetectionResult.Face::getConfidence).reversed())
+                .collect(java.util.stream.Collectors.toList());
 
         if (validFaces.isEmpty()) {
             markCompleted(ci);
             return new ProcessResult(false, false);
         }
 
-        // Sort by confidence descending
-        validFaces.sort(java.util.Comparator.comparing(FaceDetectionResult.Face::getConfidence).reversed());
-
         // Process each valid face: create FaceRecord, crop, register to library, analyze emotion
         int faceCount = 0;
         int emotionCount = 0;
-        for (int faceIdx = 0; faceIdx < validFaces.size(); faceIdx++) {
-            FaceDetectionResult.Face face = validFaces.get(faceIdx);
-            FaceResult grpcFace = validGrpcFaces.get(faceIdx);  // parallel list
+        for (FaceDetectionResult.Face face : validFaces) {
             FaceDetectionResult.BBox bbox = face.getBbox();
             FaceRecord fr = new FaceRecord();
             fr.setClassImage(ci);

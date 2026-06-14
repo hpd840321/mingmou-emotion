@@ -38,21 +38,32 @@ class FaceProcessingPipelineTest {
     @Mock private FaceCroppingService croppingService;
     @Mock private FaceRegistrationService registrationService;
     @Mock private PipelineProgressService progressService;
-    @Mock private com.school.emotion.service.ai.GrpcFaceServiceClient grpcFaceClient;
     @Mock private org.springframework.core.task.TaskExecutor pipelineExecutor;
 
     private FaceProcessingPipeline pipeline;
+
+    /** Helper: create a ClassImage pre-staged in the repository mock. */
+    private ClassImage stagePendingCi(long id, String imageUrl) {
+        ClassImage ci = new ClassImage();
+        ci.setId(id);
+        ci.setImageUrl(imageUrl);
+        ci.setStatus(ImageStatus.PENDING);
+        when(classImageRepository.findById(id)).thenReturn(java.util.Optional.of(ci));
+        when(classImageRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        return ci;
+    }
 
     @BeforeEach
     void setUp() {
         pipeline = new FaceProcessingPipeline(
                 classImageRepository, faceRecordRepository, emotionRecordRepository,
                 gradeRepository, visionMindClient,
-                croppingService, registrationService, progressService, grpcFaceClient, pipelineExecutor, 0.3f, 50);
+                croppingService, registrationService, progressService, pipelineExecutor, 0.3f, 50);
     }
 
     @Test
     void processImage_fileNotFound_returnsNoFace() {
+        // findById not stubbed → returns empty → early return
         ClassImage ci = new ClassImage();
         ci.setId(1L);
         ci.setImageUrl("/nonexistent/missing.jpg");
@@ -66,15 +77,11 @@ class FaceProcessingPipelineTest {
     void processImage_detectionError_marksFailed() throws IOException {
         Path tempFile = Files.createTempFile("test-detect-err-", ".jpg");
         Files.write(tempFile, new byte[]{0, 1, 2});
-
-        ClassImage ci = new ClassImage();
-        ci.setId(1L);
-        ci.setImageUrl(tempFile.toAbsolutePath().toString());
-        ci.setStatus(ImageStatus.PENDING);
+        stagePendingCi(1L, tempFile.toAbsolutePath().toString());
 
         when(visionMindClient.detectFaces(any())).thenThrow(new RuntimeException("API unavailable"));
 
-        var result = pipeline.processImage(ci);
+        var result = pipeline.processImage(stagePendingCi(1L, tempFile.toAbsolutePath().toString()));
         assertFalse(result.faceDetected());
 
         Files.deleteIfExists(tempFile);
@@ -85,14 +92,9 @@ class FaceProcessingPipelineTest {
         Path tempFile = Files.createTempFile("test-noface-", ".jpg");
         Files.write(tempFile, new byte[]{0, 1, 2});
 
-        ClassImage ci = new ClassImage();
-        ci.setId(2L);
-        ci.setImageUrl(tempFile.toAbsolutePath().toString());
-        ci.setStatus(ImageStatus.PENDING);
-
         when(visionMindClient.detectFaces(any())).thenReturn(new FaceDetectionResult());
 
-        var result = pipeline.processImage(ci);
+        var result = pipeline.processImage(stagePendingCi(2L, tempFile.toAbsolutePath().toString()));
         assertFalse(result.faceDetected());
 
         Files.deleteIfExists(tempFile);
@@ -102,11 +104,6 @@ class FaceProcessingPipelineTest {
     void processImage_selectsHighestConfidenceFace() throws IOException {
         Path tempFile = Files.createTempFile("test-select-", ".jpg");
         Files.write(tempFile, new byte[]{0, 1, 2});
-
-        ClassImage ci = new ClassImage();
-        ci.setId(3L);
-        ci.setImageUrl(tempFile.toAbsolutePath().toString());
-        ci.setStatus(ImageStatus.PENDING);
 
         FaceDetectionResult result = new FaceDetectionResult();
         FaceDetectionResult.Face f1 = new FaceDetectionResult.Face();
@@ -120,7 +117,7 @@ class FaceProcessingPipelineTest {
         when(visionMindClient.detectFaces(any())).thenReturn(result);
         when(faceRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        var presult = pipeline.processImage(ci);
+        var presult = pipeline.processImage(stagePendingCi(3L, tempFile.toAbsolutePath().toString()));
         assertTrue(presult.faceDetected());
 
         Files.deleteIfExists(tempFile);
@@ -131,11 +128,6 @@ class FaceProcessingPipelineTest {
         Path tempFile = Files.createTempFile("test-low-", ".jpg");
         Files.write(tempFile, new byte[]{0, 1, 2});
 
-        ClassImage ci = new ClassImage();
-        ci.setId(4L);
-        ci.setImageUrl(tempFile.toAbsolutePath().toString());
-        ci.setStatus(ImageStatus.PENDING);
-
         FaceDetectionResult result = new FaceDetectionResult();
         FaceDetectionResult.Face face = new FaceDetectionResult.Face();
         face.setConfidence(0.1f);
@@ -144,7 +136,7 @@ class FaceProcessingPipelineTest {
 
         when(visionMindClient.detectFaces(any())).thenReturn(result);
 
-        var presult = pipeline.processImage(ci);
+        var presult = pipeline.processImage(stagePendingCi(4L, tempFile.toAbsolutePath().toString()));
         assertFalse(presult.faceDetected());
 
         Files.deleteIfExists(tempFile);
