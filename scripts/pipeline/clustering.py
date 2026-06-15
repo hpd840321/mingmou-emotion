@@ -20,7 +20,7 @@ from scripts.pipeline.config import (
     CLUSTER_SIMILARITY_THRESHOLD, CLUSTER_MIN_CORE,
     CLUSTER_CENTROID_MERGE, CLUSTER_MIN_SIZE,
     CLUSTER_MIN_CONFIDENCE, SPATIAL_SEAT_DIST,
-    MIN_FACE_WIDTH,
+    CLUSTER_MIN_FACE_WIDTH,
 )
 
 log = logging.getLogger(__name__)
@@ -92,14 +92,14 @@ def load_face_meta(face_record_ids):
     for i in range(0, len(ids), batch_size):
         batch = ids[i:i + batch_size]
         cur.execute(
-            """SELECT fr.id, fr.confidence, fr.bbox, ci.class_id
+            """SELECT fr.id, fr.confidence, fr.bbox, ci.class_id, ci.period_label
                FROM face_record fr
                JOIN class_image ci ON ci.id = fr.class_image_id
                WHERE fr.id = ANY(%s)""",
             (batch,),
         )
         for row in cur.fetchall():
-            fr_id, conf, bbox, cid = row
+            fr_id, conf, bbox, cid, period = row
             cx, cy = parse_bbox_center(bbox)
             meta[fr_id] = {
                 "confidence": conf,
@@ -107,6 +107,7 @@ def load_face_meta(face_record_ids):
                 "center_x": cx,
                 "center_y": cy,
                 "class_id": cid,
+                "period": period,
             }
     cur.close()
     conn.close()
@@ -116,9 +117,17 @@ def load_face_meta(face_record_ids):
 # ── Spatial constraint ──
 
 def same_seat(meta_i, meta_j):
-    """Check if two faces are within spatial seat distance."""
+    """Check spatial constraint. Only applies within same period.
+    
+    Same student stays in same seat area during one class period.
+    Cross-period faces of the same student may be at different positions.
+    """
     if meta_i is None or meta_j is None:
+        return True  # no data → don't filter
+    # Different periods → skip spatial check (student may change seats between periods)
+    if meta_i.get("period") != meta_j.get("period"):
         return True
+    # Same period → check seat distance
     dx = meta_i["center_x"] - meta_j["center_x"]
     dy = meta_i["center_y"] - meta_j["center_y"]
     return (dx * dx + dy * dy) ** 0.5 <= SPATIAL_SEAT_DIST
@@ -353,7 +362,7 @@ def run_clustering():
                 and meta["confidence"] < CLUSTER_MIN_CONFIDENCE):
             filter_stats["conf"] += 1
             continue
-        if meta["face_width"] < MIN_FACE_WIDTH:
+        if meta["face_width"] < CLUSTER_MIN_FACE_WIDTH:
             filter_stats["size"] += 1
             continue
         filtered_indices.append(i)
@@ -363,7 +372,7 @@ def run_clustering():
     log.info("After filtering: %d remained "
              "(conf<%.1f: %d, w<%d: %d, noMeta: %d)",
              n, CLUSTER_MIN_CONFIDENCE, filter_stats["conf"],
-             MIN_FACE_WIDTH, filter_stats["size"], filter_stats["no_meta"])
+             CLUSTER_MIN_FACE_WIDTH, filter_stats["size"], filter_stats["no_meta"])
 
     if n < 2:
         log.warning("Insufficient points after filtering (n=%d)", n)
@@ -409,8 +418,7 @@ def run_clustering():
     for cluster in clusters:
         cluster_key = f"qc_{int(time.time())}_{saved}"
         face_ids = [fr_ids[filtered_indices[idx]] for idx in cluster]
-        f_indices = [filtered_indices[idx] for idx in cluster]
-        cid = derive_class_id(f_indices, class_ids)
+        cid = derive_class_id(cluster, class_ids)
 
         cur.execute(
             """INSERT INTO face_cluster
