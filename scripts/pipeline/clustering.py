@@ -385,14 +385,9 @@ def run_clustering():
     for i in range(n):
         for j in range(i + 1, n):
             if threshold_mask[i, j]:
-                fi = filtered_indices[i]
-                fj = filtered_indices[j]
-                mi = face_meta.get(fr_ids[fi])
-                mj = face_meta.get(fr_ids[fj])
-                if same_seat(mi, mj):
-                    adj_list[i].append(j)
-                    adj_list[j].append(i)
-                    edge_count += 1
+                adj_list[i].append(j)
+                adj_list[j].append(i)
+                edge_count += 1
 
     log.info("Similarity graph: %d edges among %d nodes", edge_count, n)
 
@@ -482,30 +477,28 @@ def auto_annotate(cur, conn):
         student_id = cur.fetchone()[0]
 
         # Backfill face_record.student_id
-        try:
-            ids = json.loads(face_tokens)
-            for id_str in ids:
-                try:
-                    fr_id = int(id_str)
-                    cur.execute(
-                        """UPDATE face_record SET student_id = %s
-                           WHERE id = %s AND student_id IS NULL""",
-                        (student_id, fr_id),
-                    )
-                except (ValueError, TypeError):
-                    pass
-        except json.JSONDecodeError:
-            # Regex fallback
-            for m in re.finditer(r'"?(\\d+)"?', str(face_tokens)):
-                try:
-                    fr_id = int(m.group(1))
-                    cur.execute(
-                        """UPDATE face_record SET student_id = %s
-                           WHERE id = %s AND student_id IS NULL""",
-                        (student_id, fr_id),
-                    )
-                except (ValueError, TypeError):
-                    pass
+        # face_tokens may be a JSON string (from our INSERT) or list (psycopg2 decoded JSONB)
+        if isinstance(face_tokens, list):
+            ids = face_tokens
+        elif isinstance(face_tokens, str):
+            try:
+                ids = json.loads(face_tokens)
+            except json.JSONDecodeError:
+                # Regex fallback for malformed JSON
+                ids = [m.group(1) for m in re.finditer(r'"?(\\d+)"?', face_tokens)]
+        else:
+            ids = []
+
+        for id_val in ids:
+            try:
+                fr_id = int(id_val) if not isinstance(id_val, int) else id_val
+                cur.execute(
+                    """UPDATE face_record SET student_id = %s
+                       WHERE id = %s AND student_id IS NULL""",
+                    (student_id, fr_id),
+                )
+            except (ValueError, TypeError):
+                pass
 
         cur.execute(
             """UPDATE face_cluster SET student_id = %s, status = 'auto_annotated'
